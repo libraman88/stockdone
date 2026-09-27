@@ -28,5 +28,25 @@ export type Sale = {
   items: Array<{ productId: string; qty: number; price: number }>;
   total: number;
   paymentMethod: "cash" | "card" | "bank" | "other";
+  discount?: number;
+  customerId?: string;
   createdAt: string;
+};
+
+export type Payment = {
+  id: string;
+  saleId: string;
+  method: "cash" | "card" | "bank" | "other";
+  amount: number;
+  received?: number;
+  change?: number;
+  createdAt: string;
+};
+
+export type InvoiceSettings = {
+  businessName: string;
+  phone: string;
+  address: string;
+  footer: string;
+  paper: "A4" | "80mm";
 };
