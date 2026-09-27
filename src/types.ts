@@ -15,9 +15,10 @@ export type Product = {
 export type StockMovement = {
   id: string;
   productId: string;
-  type: "opening" | "purchase" | "sale" | "sale_return" | "adjustment";
+  type: "opening" | "purchase" | "sale" | "sale_return" | "purchase_return" | "adjustment";
   quantity: number;
   reason?: string;
+  referenceId?: string;
   createdAt: string;
 };
 
