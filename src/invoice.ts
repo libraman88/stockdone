@@ -1,0 +1,6 @@
+import type { InvoiceSettings, Sale } from "./types";
+
+export function invoiceHtml(sale: Sale, settings: InvoiceSettings, names: Record<string,string>) {
+  const rows = sale.items.map(i => `<tr><td>${names[i.productId] || i.productId}</td><td>${i.qty}</td><td>Rs. ${i.price}</td><td>Rs. ${i.qty * i.price}</td></tr>`).join("");
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${sale.invoiceNo}</title><style>body{font-family:Arial;margin:24px}h1{text-align:center}.meta{margin:16px 0}table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid #ddd;padding:8px;text-align:left}.total{text-align:right;font-size:20px;font-weight:700;margin-top:16px}@media print{body{margin:8px}}</style></head><body><h1>${settings.businessName}</h1><div class="meta">${settings.phone}<br/>${settings.address}<br/>Invoice: ${sale.invoiceNo}<br/>Date: ${new Date(sale.createdAt).toLocaleString()}</div><table><thead><tr><th>Product</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table><div class="total">Total: Rs. ${sale.total}</div><p>Payment: ${sale.paymentMethod}</p><p>${settings.footer}</p><script>window.onload=()=>window.print()</script></body></html>`;
+}
