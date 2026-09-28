@@ -118,3 +118,6 @@ export type InventorySummary={product_id:string;name:string;sku:string;variant_i
 export function getInventorySummary(){return apiRequest<InventorySummary[]>("/inventory/summary");}
 export type StockMovementRow={id:string;branch_id:string;variant_id:string;type:string;quantity:number;reason:string|null;reference_id:string|null;created_at:string;name:string;sku:string;size:string|null;color:string|null};
 export function getInventoryMovements(){return apiRequest<StockMovementRow[]>("/inventory/movements");}
+
+export type ApiReturnRecord={id:string;type:string;sale_id:string;refund_amount:number;price_difference:number;created_at:string};
+export function getReturns(){return apiRequest<ApiReturnRecord[]>("/returns");}
