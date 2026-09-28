@@ -21,6 +21,8 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
 
 export function requestPasswordReset(username:string){return apiRequest<{ok:boolean;message:string}>("/auth/password-reset/request",{method:"POST",body:JSON.stringify({username})});}
 export function confirmPasswordReset(token:string,password:string){return apiRequest<{ok:boolean}>("/auth/password-reset/confirm",{method:"POST",body:JSON.stringify({token,password})});}
+export type AuthSession={id:string;created_at:string;expires_at:string;revoked_at:string|null};
+export function getAuthSessions(){return apiRequest<AuthSession[]>("/auth/sessions");}
 export function logout(){return apiRequest<{ok:boolean}>("/auth/logout",{method:"POST"}).finally(()=>setApiToken(null));}
 export function logoutAll(){return apiRequest<{ok:boolean}>("/auth/logout-all",{method:"POST"}).finally(()=>setApiToken(null));}
 
