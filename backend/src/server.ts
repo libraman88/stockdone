@@ -1,4 +1,3 @@
-import type { User as ExpressUser } from "express";
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
@@ -12,7 +11,7 @@ import { z } from "zod";
 declare global {
   namespace Express {
     interface Request {
-      user?: { id: string; username: string; role: string; businessId: string; branchId: string; session: string };
+      user?: { sub: string; id: string; username: string; role: string; businessId: string; branchId: string; session: string };
     }
   }
 }
@@ -181,7 +180,7 @@ if(!JWT_SECRET) throw new Error("JWT_SECRET is required");
 async function authenticate(req:any,res:any,next:any){
   const raw=String(req.headers.authorization||"");
   if(!raw.startsWith("Bearer ")) return res.status(401).json({error:"Authentication required"});
-  try{const payload:any=jwt.verify(raw.slice(7),JWT_SECRET);if(payload.session){const s=await pool.query("SELECT 1 FROM auth_sessions WHERE token_hash=$1 AND user_id=$2 AND revoked_at IS NULL AND expires_at>now()",[payload.session,payload.sub]);if(!s.rowCount)return res.status(401).json({error:"Session expired or revoked"})}req.user=payload;next()}
+  try{const payload:any=jwt.verify(raw.slice(7),JWT_SECRET as string);if(payload.session){const s=await pool.query("SELECT 1 FROM auth_sessions WHERE token_hash=$1 AND user_id=$2 AND revoked_at IS NULL AND expires_at>now()",[payload.session,payload.sub]);if(!s.rowCount)return res.status(401).json({error:"Session expired or revoked"})}req.user=payload;next()}
   catch{return res.status(401).json({error:"Invalid or expired session"})}
 }
 function requirePermission(permission:string){
@@ -209,7 +208,7 @@ app.patch("/api/admin/users/:id/password",authenticate,requirePermission("users"
 
 const smtp=process.env.SMTP_HOST&&process.env.SMTP_USER&&process.env.SMTP_PASS?nodemailer.createTransport({host:process.env.SMTP_HOST,port:Number(process.env.SMTP_PORT||587),secure:process.env.SMTP_SECURE==="true",auth:{user:process.env.SMTP_USER,pass:process.env.SMTP_PASS}}):null;
 const hashToken=(value:string)=>crypto.createHash("sha256").update(value).digest("hex");
-const newSession=async(userId:string,role:string,username:string)=>{const raw=crypto.randomBytes(32).toString("hex");await pool.query("INSERT INTO auth_sessions(id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+INTERVAL '8 hours')",[crypto.randomUUID(),userId,hashToken(raw)]);return jwt.sign({sub:userId,role,username,session:hashToken(raw)},JWT_SECRET,{expiresIn:"8h"})};
+const newSession=async(userId:string,role:string,username:string)=>{const raw=crypto.randomBytes(32).toString("hex");await pool.query("INSERT INTO auth_sessions(id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+INTERVAL '8 hours')",[crypto.randomUUID(),userId,hashToken(raw)]);return jwt.sign({sub:userId,role,username,session:hashToken(raw)},JWT_SECRET as string,{expiresIn:"8h"})};
 const passwordResetRequestSchema=z.object({username:z.string().min(1)});
 app.post("/api/auth/password-reset/request",async(req,res)=>{const p=passwordResetRequestSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:"Invalid request"});try{const r=await pool.query("SELECT id FROM users WHERE business_id=$1 AND username=$2 AND active=true LIMIT 1",[process.env.DEFAULT_BUSINESS_ID,p.data.username]);if(r.rowCount){const raw=crypto.randomBytes(32).toString("hex");await pool.query("INSERT INTO password_reset_tokens(id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+INTERVAL '15 minutes')",[crypto.randomUUID(),r.rows[0].id,hashToken(raw)]);if(smtp&&process.env.SMTP_FROM&&process.env.APP_URL){await smtp.sendMail({from:process.env.SMTP_FROM,to:p.data.username,subject:"StockDone password reset",text:`Your StockDone password reset token is: ${raw}\nIt expires in 15 minutes. If you did not request this, ignore this email.`})}}res.json({ok:true,message:"If the account exists, reset instructions have been sent."})}catch{res.status(500).json({error:"Unable to process reset request"})}});
 const passwordResetConfirmSchema=z.object({token:z.string().min(20),password:z.string().min(8).max(200)});
