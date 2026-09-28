@@ -17,6 +17,14 @@ export async function cacheProduct(product:{id:string;name:string;sku:string;cat
 }
 export async function cacheProducts(products:Parameters<typeof cacheProduct>[0][]) { for(const p of products)await cacheProduct(p); }
 
+export async function getCachedProducts() {
+  if(!(await offlineDb.available())) return [];
+  return offlineDb.query<{
+    id:string;name:string;sku:string;category:string|null;size:string|null;color:string|null;
+    barcode:string|null;cost:number;price:number;qty:number;reorder_level:number
+  }>("SELECT id,name,sku,category,size,color,barcode,cost,price,qty,reorder_level FROM products ORDER BY name");
+}
+
 export async function queueOfflineSale(sale:{id:string;invoiceNo:string;total:number;paymentMethod:string;discount:number;customerId?:string|null;received?:number;change?:number;items:{id:string;productId:string;qty:number;price:number;unitCost:number}[]}) {
   if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
   const now=new Date().toISOString();
