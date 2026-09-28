@@ -50,5 +50,10 @@ app.get("/api/reports/summary",async(req,res)=>{
   }catch{res.status(500).json({error:"Unable to generate report"})}
 });
 
+
+const rolePermissions:Record<string,string[]>={owner:["*"],manager:["sales","products","inventory","purchases","customers","returns","reports"],cashier:["sales","customers","print"]};
+function requirePermission(permission:string){return (req:any,res:any,next:any)=>{const role=String(req.header("x-user-role")||"");const allowed=rolePermissions[role]||[];if(!allowed.includes("*")&&!allowed.includes(permission))return res.status(403).json({error:"Permission denied"});next()}}
+app.use("/api/admin",requirePermission("admin"),(_req,res)=>res.status(501).json({error:"Admin API not implemented"}));
+
 const port=Number(process.env.PORT||4000);
 app.listen(port,()=>console.log(`StockDone API listening on :${port}`));
