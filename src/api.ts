@@ -71,7 +71,7 @@ export function createReturn(input:{saleId:string;type:"return"|"exchange";refun
 export function getSales(){return apiRequest<any[]>("/sales");}
 
 export type ReportSummary={sales:{invoices:number;sales_total:number;discounts:number};profit:{gross_profit:number};inventory:{variants:number;units:number;cost_value:number;retail_value:number};lowStock:Array<{name:string;sku:string;size:string|null;color:string|null;quantity:number;reorder_level:number}>};
-export function getReportSummary(from:string,to:string){return apiRequest<ReportSummary>(`/reports/summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
+export function getReportSummary(from:string,to:string){return apiRequest<ReportSummary>(`/reports/summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}\nexport type DashboardSummary=ReportSummary;\nexport function getDashboardSummary(from:string,to:string){return getReportSummary(from,to);}
 
 export type DailySalesReport={date:string;invoices:number;total:number;discounts:number};
 export type PaymentReport={method:string;invoices:number;total:number};
