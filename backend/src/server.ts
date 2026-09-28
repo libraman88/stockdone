@@ -167,8 +167,6 @@ app.get("/api/reports/khata",authenticate,requirePermission("reports"),async(_re
 const JWT_SECRET=process.env.JWT_SECRET;
 if(!JWT_SECRET) throw new Error("JWT_SECRET is required");
 
-const rolePermissions:Record<string,string[]>={owner:["*"],manager:["sales","products","inventory","purchases","customers","returns","reports"],cashier:["sales","customers","print"]};
-
 function authenticate(req:any,res:any,next:any){
   const raw=String(req.headers.authorization||"");
   if(!raw.startsWith("Bearer ")) return res.status(401).json({error:"Authentication required"});
@@ -176,15 +174,16 @@ function authenticate(req:any,res:any,next:any){
   catch{return res.status(401).json({error:"Invalid or expired session"})}
 }
 function requirePermission(permission:string){
-  return (req:any,res:any,next:any)=>{
-    const role=String(req.user?.role||"");
-    const allowed=rolePermissions[role]||[];
-    if(!allowed.includes("*")&&!allowed.includes(permission)) return res.status(403).json({error:"Permission denied"});
-    next();
+  return async (req:any,res:any,next:any)=>{
+    try{
+      const role=String(req.user?.role||"");
+      if(role==="owner") return next();
+      const r=await pool.query("SELECT 1 FROM role_permissions rp JOIN roles r ON r.id=rp.role_id JOIN permissions p ON p.id=rp.permission_id WHERE r.business_id=$1 AND r.name=$2 AND p.code=$3 LIMIT 1",[process.env.DEFAULT_BUSINESS_ID,role,permission]);
+      if(!r.rowCount)return res.status(403).json({error:"Permission denied"});
+      next();
+    }catch{return res.status(500).json({error:"Permission check failed"})}
   };
 }
-app.use("/api/admin",authenticate,requirePermission("admin"),(_req,res)=>res.status(501).json({error:"Admin API not implemented"}));
-
 
 const userCreateSchema=z.object({username:z.string().min(3).max(50),name:z.string().min(1).max(100),role:z.enum(["manager","cashier"]),password:z.string().min(8).max(200)});
 app.get("/api/admin/users",authenticate,requirePermission("users"),async(_req,res)=>{try{const r=await pool.query("SELECT id,username,name,role,active,created_at FROM users WHERE business_id=$1 ORDER BY created_at",[process.env.DEFAULT_BUSINESS_ID]);res.json(r.rows)}catch{res.status(500).json({error:"Unable to load users"})}});
