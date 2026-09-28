@@ -24,3 +24,7 @@ CREATE INDEX IF NOT EXISTS idx_customer_transactions_customer_date ON customer_t
 CREATE TABLE IF NOT EXISTS returns (id UUID PRIMARY KEY,business_id UUID NOT NULL REFERENCES businesses(id),branch_id UUID NOT NULL REFERENCES branches(id),sale_id UUID NOT NULL REFERENCES sales(id),type TEXT NOT NULL CHECK(type IN ('return','exchange')),refund_amount NUMERIC(12,2) NOT NULL DEFAULT 0,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS return_items (id UUID PRIMARY KEY,return_id UUID NOT NULL REFERENCES returns(id),variant_id UUID NOT NULL REFERENCES product_variants(id),quantity INTEGER NOT NULL,unit_price NUMERIC(12,2) NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_returns_sale ON returns(sale_id,created_at DESC);
+
+CREATE TABLE IF NOT EXISTS audit_logs (id UUID PRIMARY KEY,business_id UUID NOT NULL REFERENCES businesses(id),user_id UUID REFERENCES users(id),action TEXT NOT NULL,entity TEXT,entity_id UUID,details JSONB,ip_address INET,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS idx_audit_logs_business_date ON audit_logs(business_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity,entity_id,created_at DESC);
