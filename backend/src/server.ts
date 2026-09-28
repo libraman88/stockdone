@@ -167,10 +167,10 @@ app.get("/api/reports/khata",authenticate,requirePermission("reports"),async(_re
 const JWT_SECRET=process.env.JWT_SECRET;
 if(!JWT_SECRET) throw new Error("JWT_SECRET is required");
 
-function authenticate(req:any,res:any,next:any){
+async function authenticate(req:any,res:any,next:any){
   const raw=String(req.headers.authorization||"");
   if(!raw.startsWith("Bearer ")) return res.status(401).json({error:"Authentication required"});
-  try{req.user=jwt.verify(raw.slice(7),JWT_SECRET);next()}
+  try{const payload:any=jwt.verify(raw.slice(7),JWT_SECRET);if(payload.session){const s=await pool.query("SELECT 1 FROM auth_sessions WHERE token_hash=$1 AND user_id=$2 AND revoked_at IS NULL AND expires_at>now()",[payload.session,payload.sub]);if(!s.rowCount)return res.status(401).json({error:"Session expired or revoked"})}req.user=payload;next()}
   catch{return res.status(401).json({error:"Invalid or expired session"})}
 }
 function requirePermission(permission:string){
@@ -196,6 +196,12 @@ app.post("/api/admin/users",authenticate,requirePermission("users"),async(req,re
 app.patch("/api/admin/users/:id/status",authenticate,requirePermission("users"),async(req,res)=>{const p=z.object({active:z.boolean()}).safeParse(req.body);if(!p.success)return res.status(400).json({error:"Invalid status"});try{if(req.params.id===req.user?.sub&&p.data.active===false)return res.status(400).json({error:"You cannot disable your own account"});const r=await pool.query("UPDATE users SET active=$1 WHERE id=$2 AND business_id=$3 RETURNING id,username,name,role,active",[p.data.active,req.params.id,process.env.DEFAULT_BUSINESS_ID]);if(!r.rowCount)return res.status(404).json({error:"User not found"});await audit(req,"user.status","user",req.params.id,{active:p.data.active});res.json(r.rows[0])}catch{res.status(500).json({error:"Unable to update user"})}});
 app.patch("/api/admin/users/:id/password",authenticate,requirePermission("users"),async(req,res)=>{const p=z.object({password:z.string().min(8).max(200)}).safeParse(req.body);if(!p.success)return res.status(400).json({error:"Password must be at least 8 characters"});try{const hash=await bcrypt.hash(p.data.password,12);const r=await pool.query("UPDATE users SET password_hash=$1 WHERE id=$2 AND business_id=$3 RETURNING id",[hash,req.params.id,process.env.DEFAULT_BUSINESS_ID]);if(!r.rowCount)return res.status(404).json({error:"User not found"});await audit(req,"user.password","user",req.params.id);res.json({ok:true})}catch{res.status(500).json({error:"Unable to change password"})}});
 
+const hashToken=(value:string)=>crypto.createHash("sha256").update(value).digest("hex");
+const newSession=async(userId:string,role:string,username:string)=>{const raw=crypto.randomBytes(32).toString("hex");await pool.query("INSERT INTO auth_sessions(id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+INTERVAL '8 hours')",[crypto.randomUUID(),userId,hashToken(raw)]);return jwt.sign({sub:userId,role,username,session:hashToken(raw)},JWT_SECRET,{expiresIn:"8h"})};
+const passwordResetRequestSchema=z.object({username:z.string().min(1)});
+app.post("/api/auth/password-reset/request",async(req,res)=>{const p=passwordResetRequestSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:"Invalid request"});try{const r=await pool.query("SELECT id FROM users WHERE business_id=$1 AND username=$2 AND active=true LIMIT 1",[process.env.DEFAULT_BUSINESS_ID,p.data.username]);if(r.rowCount){const raw=crypto.randomBytes(32).toString("hex");await pool.query("INSERT INTO password_reset_tokens(id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+INTERVAL '15 minutes')",[crypto.randomUUID(),r.rows[0].id,hashToken(raw)]);}res.json({ok:true,message:"If the account exists, a reset token has been created. Delivery channel must be configured for production."})}catch{res.status(500).json({error:"Unable to process reset request"})}});
+const passwordResetConfirmSchema=z.object({token:z.string().min(20),password:z.string().min(8).max(200)});
+app.post("/api/auth/password-reset/confirm",async(req,res)=>{const p=passwordResetConfirmSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:"Invalid reset data"});const client=await pool.connect();try{await client.query("BEGIN");const r=await client.query("SELECT id,user_id FROM password_reset_tokens WHERE token_hash=$1 AND used_at IS NULL AND expires_at>now() LIMIT 1",[hashToken(p.data.token)]);if(!r.rowCount)throw new Error("INVALID_TOKEN");const hash=await bcrypt.hash(p.data.password,12);await client.query("UPDATE users SET password_hash=$1 WHERE id=$2",[hash,r.rows[0].user_id]);await client.query("UPDATE password_reset_tokens SET used_at=now() WHERE id=$1",[r.rows[0].id]);await client.query("UPDATE auth_sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL",[r.rows[0].user_id]);await client.query("COMMIT");res.json({ok:true})}catch(e){await client.query("ROLLBACK");res.status(400).json({error:e instanceof Error&&e.message==="INVALID_TOKEN"?"Invalid or expired reset token":"Unable to reset password"})}finally{client.release()}});
 const loginSchema=z.object({username:z.string().min(1),password:z.string().min(1)});
 const loginAttempts=new Map<string,{count:number;resetAt:number}>();
 app.post("/api/auth/login",async(req,res)=>{
@@ -210,12 +216,14 @@ app.post("/api/auth/login",async(req,res)=>{
    const x=loginAttempts.get(key)||{count:0,resetAt:now+15*60*1000};x.count++;loginAttempts.set(key,x);return res.status(401).json({error:"Invalid username or password"});
   }
   loginAttempts.delete(key);
-  const u=r.rows[0],token=jwt.sign({sub:u.id,role:u.role,username:u.username},JWT_SECRET,{expiresIn:"8h"});
+  const u=r.rows[0],token=await newSession(u.id,u.role,u.username);
   await audit({user:{sub:u.id},ip:req.ip},"auth.login","user",u.id);
   res.json({token,user:{id:u.id,username:u.username,name:u.name,role:u.role}});
  }catch{res.status(500).json({error:"Login failed"})}
 });
 app.get("/api/auth/me",authenticate,(req:any,res)=>res.json({user:req.user}));
+app.post("/api/auth/logout",authenticate,async(req:any,res)=>{try{if(req.user?.session)await pool.query("UPDATE auth_sessions SET revoked_at=now() WHERE token_hash=$1",[req.user.session]);res.json({ok:true})}catch{res.status(500).json({error:"Logout failed"})}});
+app.post("/api/auth/logout-all",authenticate,async(req:any,res)=>{try{await pool.query("UPDATE auth_sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL",[req.user.sub]);res.json({ok:true})}catch{res.status(500).json({error:"Logout all failed"})}});
 
 
 async function audit(req:any,action:string,entity?:string,entityId?:string,details?:unknown){try{await pool.query("INSERT INTO audit_logs(id,business_id,user_id,action,entity,entity_id,details,ip_address) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",[crypto.randomUUID(),process.env.DEFAULT_BUSINESS_ID,req.user?.sub||null,action,entity||null,entityId||null,details?JSON.stringify(details):null,req.ip||null])}catch{}}
