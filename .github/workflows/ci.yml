@@ -29,3 +29,19 @@ jobs:
           node-version: 22
       - run: npm install --no-audit --no-fund
       - run: npm run build
+
+  desktop-windows:
+    runs-on: windows-latest
+    needs: [frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm run desktop:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stockdone-windows
+          path: release/*
+          if-no-files-found: error
