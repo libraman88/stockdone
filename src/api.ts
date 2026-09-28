@@ -146,3 +146,6 @@ export function getReturns(){return apiRequest<ApiReturnRecord[]>("/returns");}
 
 export type CustomerTransactionRow={id:string;customer_id:string;type:string;amount:number;note:string|null;created_at:string};
 export function getCustomerTransactions(customerId:string){return apiRequest<CustomerTransactionRow[]>(`/customers/${customerId}/transactions`);}
+
+export type OfflineStockDifference={variant_id:string;name:string;sku:string;size:string|null;color:string|null;server_quantity:number;local_quantity:number|null;difference:number};
+export function reconcileOfflineStock(items:{variantId:string;quantity:number}[]){return apiRequest<{checked:number;differences:OfflineStockDifference[]}>("/inventory/reconcile-offline",{method:"POST",body:JSON.stringify({items})});}
