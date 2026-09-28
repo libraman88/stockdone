@@ -213,6 +213,46 @@ const passwordResetRequestSchema=z.object({username:z.string().min(1)});
 app.post("/api/auth/password-reset/request",async(req,res)=>{const p=passwordResetRequestSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:"Invalid request"});try{const r=await pool.query("SELECT id FROM users WHERE business_id=$1 AND username=$2 AND active=true LIMIT 1",[process.env.DEFAULT_BUSINESS_ID,p.data.username]);if(r.rowCount){const raw=crypto.randomBytes(32).toString("hex");await pool.query("INSERT INTO password_reset_tokens(id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+INTERVAL '15 minutes')",[crypto.randomUUID(),r.rows[0].id,hashToken(raw)]);if(smtp&&process.env.SMTP_FROM&&process.env.APP_URL){await smtp.sendMail({from:process.env.SMTP_FROM,to:p.data.username,subject:"StockDone password reset",text:`Your StockDone password reset token is: ${raw}\nIt expires in 15 minutes. If you did not request this, ignore this email.`})}}res.json({ok:true,message:"If the account exists, reset instructions have been sent."})}catch{res.status(500).json({error:"Unable to process reset request"})}});
 const passwordResetConfirmSchema=z.object({token:z.string().min(20),password:z.string().min(8).max(200)});
 app.post("/api/auth/password-reset/confirm",async(req,res)=>{const p=passwordResetConfirmSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:"Invalid reset data"});const client=await pool.connect();try{await client.query("BEGIN");const r=await client.query("SELECT id,user_id FROM password_reset_tokens WHERE token_hash=$1 AND used_at IS NULL AND expires_at>now() LIMIT 1",[hashToken(p.data.token)]);if(!r.rowCount)throw new Error("INVALID_TOKEN");const hash=await bcrypt.hash(p.data.password,12);await client.query("UPDATE users SET password_hash=$1 WHERE id=$2",[hash,r.rows[0].user_id]);await client.query("UPDATE password_reset_tokens SET used_at=now() WHERE id=$1",[r.rows[0].id]);await client.query("UPDATE auth_sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL",[r.rows[0].user_id]);await client.query("COMMIT");res.json({ok:true})}catch(e){await client.query("ROLLBACK");res.status(400).json({error:e instanceof Error&&e.message==="INVALID_TOKEN"?"Invalid or expired reset token":"Unable to reset password"})}finally{client.release()}});
+const setupSchema=z.object({
+  businessName:z.string().min(1).max(120),
+  branchName:z.string().min(1).max(120),
+  branchCode:z.string().min(1).max(20),
+  ownerName:z.string().min(1).max(100),
+  username:z.string().min(3).max(50),
+  password:z.string().min(8).max(200).regex(/[A-Z]/,"Password must contain an uppercase letter").regex(/[a-z]/,"Password must contain a lowercase letter").regex(/[0-9]/,"Password must contain a number")
+});
+
+app.post("/api/auth/setup",async(req,res)=>{
+  const p=setupSchema.safeParse(req.body);
+  if(!p.success)return res.status(400).json({error:p.error.issues[0]?.message||"Invalid setup data"});
+  const client=await pool.connect();
+  try{
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('stockdone:first-run-setup'))");
+    let businessId=process.env.DEFAULT_BUSINESS_ID;
+    let branchId=process.env.DEFAULT_BRANCH_ID;
+    if(!businessId||!branchId)throw new Error("SETUP_IDS_MISSING");
+    const existing=await client.query("SELECT id FROM users WHERE business_id=$1 LIMIT 1",[businessId]);
+    if(existing.rowCount)throw new Error("SETUP_ALREADY_COMPLETED");
+    await client.query("INSERT INTO businesses(id,name) VALUES($1,$2) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name",[businessId,p.data.businessName]);
+    await client.query("INSERT INTO branches(id,business_id,name,code) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,code=EXCLUDED.code,business_id=EXCLUDED.business_id",[branchId,businessId,p.data.branchName,p.data.branchCode.toUpperCase()]);
+    const hash=await bcrypt.hash(p.data.password,12);
+    const userId=crypto.randomUUID();
+    await client.query("INSERT INTO users(id,business_id,username,name,role,password_hash,active) VALUES($1,$2,$3,$4,'owner',$5,true)",[userId,businessId,p.data.username,p.data.ownerName,hash]);
+    await client.query("COMMIT");
+    const token=await newSession(userId,"owner",p.data.username);
+    await audit({user:{sub:userId},ip:req.ip},"auth.setup","user",userId,{username:p.data.username,businessName:p.data.businessName,branchCode:p.data.branchCode.toUpperCase()});
+    res.status(201).json({token,user:{id:userId,username:p.data.username,name:p.data.ownerName,role:"owner"}});
+  }catch(e){
+    await client.query("ROLLBACK");
+    const code=e instanceof Error?e.message:"";
+    if(code==="SETUP_ALREADY_COMPLETED")return res.status(409).json({error:"Initial setup has already been completed."});
+    if(code==="SETUP_IDS_MISSING")return res.status(500).json({error:"Server setup IDs are missing."});
+    if(String(e).includes("duplicate")||String(e).includes("users_username_key")||String(e).includes("branches_business_id_code_key"))return res.status(409).json({error:"Username or branch code already exists."});
+    res.status(500).json({error:"Initial setup failed."});
+  }finally{client.release()}
+});
+
 const loginSchema=z.object({username:z.string().min(1),password:z.string().min(1)});
 const loginAttempts=new Map<string,{count:number;resetAt:number}>();
 app.post("/api/auth/login",async(req,res)=>{
