@@ -34,3 +34,10 @@ export function parseProductsExcel(file: File): Promise<Record<string, unknown>[
     return XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
   });
 }
+
+export function downloadSheetExcel(sheetName:string,fileName:string,rows:Record<string,unknown>[]){const wb=XLSX.utils.book_new();const ws=XLSX.utils.json_to_sheet(rows);XLSX.utils.book_append_sheet(wb,ws,sheetName.slice(0,31)||"Export");XLSX.writeFile(wb,fileName.endsWith(".xlsx")?fileName:fileName+".xlsx")}
+export const exportInventoryExcel=(rows:Record<string,unknown>[])=>downloadSheetExcel("Inventory","stockdone-inventory.xlsx",rows);
+export const exportSalesExcel=(rows:Record<string,unknown>[])=>downloadSheetExcel("Sales","stockdone-sales.xlsx",rows);
+export const exportPurchasesExcel=(rows:Record<string,unknown>[])=>downloadSheetExcel("Purchases","stockdone-purchases.xlsx",rows);
+export const exportCustomersExcel=(rows:Record<string,unknown>[])=>downloadSheetExcel("Customers","stockdone-customers.xlsx",rows);
+export const exportMovementsExcel=(rows:Record<string,unknown>[])=>downloadSheetExcel("Movements","stockdone-stock-movements.xlsx",rows);
