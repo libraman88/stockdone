@@ -1,0 +1,13 @@
+-- StockDone core PostgreSQL schema
+CREATE TABLE IF NOT EXISTS businesses (id UUID PRIMARY KEY, name TEXT NOT NULL, phone TEXT, address TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS branches (id UUID PRIMARY KEY, business_id UUID NOT NULL REFERENCES businesses(id), name TEXT NOT NULL, code TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), UNIQUE(business_id,code));
+CREATE TABLE IF NOT EXISTS users (id UUID PRIMARY KEY, business_id UUID NOT NULL REFERENCES businesses(id), username TEXT NOT NULL, name TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('owner','manager','cashier')), password_hash TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT true, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), UNIQUE(business_id,username));
+CREATE TABLE IF NOT EXISTS categories (id UUID PRIMARY KEY, business_id UUID NOT NULL REFERENCES businesses(id), name TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS products (id UUID PRIMARY KEY, business_id UUID NOT NULL REFERENCES businesses(id), name TEXT NOT NULL, sku TEXT NOT NULL, category_id UUID REFERENCES categories(id), created_at TIMESTAMPTZ NOT NULL DEFAULT now(), UNIQUE(business_id,sku));
+CREATE TABLE IF NOT EXISTS product_variants (id UUID PRIMARY KEY, product_id UUID NOT NULL REFERENCES products(id), size TEXT, color TEXT, barcode TEXT, cost NUMERIC(12,2) NOT NULL DEFAULT 0, price NUMERIC(12,2) NOT NULL DEFAULT 0, UNIQUE(product_id,barcode));
+CREATE TABLE IF NOT EXISTS inventory (id UUID PRIMARY KEY, branch_id UUID NOT NULL REFERENCES branches(id), variant_id UUID NOT NULL REFERENCES product_variants(id), quantity INTEGER NOT NULL DEFAULT 0, reorder_level INTEGER NOT NULL DEFAULT 5, UNIQUE(branch_id,variant_id));
+CREATE TABLE IF NOT EXISTS stock_movements (id UUID PRIMARY KEY, branch_id UUID NOT NULL REFERENCES branches(id), variant_id UUID NOT NULL REFERENCES product_variants(id), type TEXT NOT NULL, quantity INTEGER NOT NULL, reason TEXT, reference_id UUID, created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS idx_inventory_variant ON inventory(variant_id);
+CREATE INDEX IF NOT EXISTS idx_stock_movements_variant_date ON stock_movements(variant_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_products_sku ON products(business_id,sku);
+CREATE INDEX IF NOT EXISTS idx_variants_barcode ON product_variants(barcode);
