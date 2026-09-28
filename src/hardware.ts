@@ -1,7 +1,8 @@
 export type PrinterPaper="80mm"|"A4";
 export type HardwareBridge={printers:()=>Promise<Array<{name:string;displayName:string;description?:string;status?:number}>>;print:(html:string,paper?:PrinterPaper,deviceName?:string)=>Promise<{ok:boolean}>};
 declare global { interface Window { stockDoneHardware?: HardwareBridge; } }
-export function handleScannerInput(value:string,onScan:(code:string)=>void){const code=value.trim().replace(/[\\r\\n]+$/,"");if(code)onScan(code)}
+export function handleScannerInput(value:string,onScan:(code:string)=>void,settings=getScannerSettings()){const code=value.trim().replace(/[\\r\\n]+$/,"");if(!settings.enabled||!code)return;onScan(code)}
+export function scannerBufferInput(current:string,key:string){if(key.length!==1)return current;return current+key}
 export function printerSettings(paper:PrinterPaper){return {paper,thermal:paper==="80mm"}}
 export async function getPrinters(){return window.stockDoneHardware?.printers() ?? []}
 export function getSavedPrinterName(){try{return localStorage.getItem("stockdone.printer.name")||""}catch{return ""}}
