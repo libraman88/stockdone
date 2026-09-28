@@ -135,6 +135,34 @@ app.get("/api/reports/summary",authenticate,async(req,res)=>{
   }catch{res.status(500).json({error:"Unable to generate report"})}
 });
 
+app.get("/api/reports/sales",authenticate,requirePermission("reports"),async(req,res)=>{
+  const from=String(req.query.from||"1970-01-01"),to=String(req.query.to||"2999-12-31");
+  try{
+    const r=await pool.query("SELECT DATE(s.created_at) AS date,COUNT(*)::int AS invoices,COALESCE(SUM(s.total),0)::numeric AS total,COALESCE(SUM(s.discount),0)::numeric AS discounts FROM sales s WHERE s.business_id=$1 AND s.created_at >= $2::date AND s.created_at < ($3::date + INTERVAL '1 day') GROUP BY DATE(s.created_at) ORDER BY date",[process.env.DEFAULT_BUSINESS_ID,from,to]);
+    const payments=await pool.query("SELECT payment_method AS method,COUNT(*)::int AS invoices,COALESCE(SUM(total),0)::numeric AS total FROM sales WHERE business_id=$1 AND created_at >= $2::date AND created_at < ($3::date + INTERVAL '1 day') GROUP BY payment_method ORDER BY total DESC",[process.env.DEFAULT_BUSINESS_ID,from,to]);
+    res.json({daily:r.rows,payments:payments.rows});
+  }catch{res.status(500).json({error:"Unable to generate sales report"})}
+});
+app.get("/api/reports/products",authenticate,requirePermission("reports"),async(req,res)=>{
+  const from=String(req.query.from||"1970-01-01"),to=String(req.query.to||"2999-12-31");
+  try{
+    const r=await pool.query("SELECT p.name,p.sku,v.size,v.color,SUM(si.quantity)::int AS units,COALESCE(SUM(si.quantity*si.unit_price),0)::numeric AS sales,COALESCE(SUM(si.quantity*si.unit_cost),0)::numeric AS cost,COALESCE(SUM(si.quantity*(si.unit_price-si.unit_cost)),0)::numeric AS gross_profit FROM sale_items si JOIN sales s ON s.id=si.sale_id JOIN product_variants v ON v.id=si.variant_id JOIN products p ON p.id=v.product_id WHERE s.business_id=$1 AND s.created_at >= $2::date AND s.created_at < ($3::date + INTERVAL '1 day') GROUP BY p.name,p.sku,v.size,v.color ORDER BY sales DESC",[process.env.DEFAULT_BUSINESS_ID,from,to]);
+    res.json(r.rows);
+  }catch{res.status(500).json({error:"Unable to generate product report"})}
+});
+app.get("/api/reports/purchases",authenticate,requirePermission("reports"),async(req,res)=>{
+  const from=String(req.query.from||"1970-01-01"),to=String(req.query.to||"2999-12-31");
+  try{
+    const r=await pool.query("SELECT pu.invoice_no,pu.purchase_date,pu.total,s.name AS supplier FROM purchases pu LEFT JOIN suppliers s ON s.id=pu.supplier_id WHERE pu.business_id=$1 AND pu.purchase_date >= $2::date AND pu.purchase_date < ($3::date + INTERVAL '1 day') ORDER BY pu.purchase_date DESC LIMIT 1000",[process.env.DEFAULT_BUSINESS_ID,from,to]);
+    res.json(r.rows);
+  }catch{res.status(500).json({error:"Unable to generate purchase report"})}
+});
+app.get("/api/reports/khata",authenticate,requirePermission("reports"),async(_req,res)=>{
+  try{
+    const r=await pool.query("SELECT id,name,phone,balance,credit_limit FROM customers WHERE business_id=$1 ORDER BY balance DESC",[process.env.DEFAULT_BUSINESS_ID]);
+    res.json(r.rows);
+  }catch{res.status(500).json({error:"Unable to generate khata report"})}
+});
 
 const JWT_SECRET=process.env.JWT_SECRET;
 if(!JWT_SECRET) throw new Error("JWT_SECRET is required");
