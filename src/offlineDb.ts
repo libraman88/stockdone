@@ -1,12 +1,13 @@
+import { apiRequest } from "./api";
+import { isOnline } from "./sync";
+
 type OfflineBridge = {
   status: () => Promise<{available:boolean}>;
   exec: (sql:string, params?:unknown[]) => Promise<unknown>;
   query: <T=Record<string,unknown>>(sql:string, params?:unknown[]) => Promise<T[]>;
 };
 
-declare global {
-  interface Window { stockDoneOffline?: OfflineBridge; }
-}
+declare global { interface Window { stockDoneOffline?: OfflineBridge; } }
 
 export const offlineDb = {
   available: async () => Boolean(window.stockDoneOffline && (await window.stockDoneOffline.status()).available),
@@ -24,6 +25,7 @@ export async function cacheProduct(product:{
   id:string; name:string; sku:string; category?:string|null; size?:string|null;
   color?:string|null; barcode?:string|null; cost:number; price:number; qty:number; reorderLevel:number;
 }) {
+  if (!(await offlineDb.available())) return;
   const now = new Date().toISOString();
   await offlineDb.exec(
     `INSERT INTO products(id,name,sku,category,size,color,barcode,cost,price,qty,reorder_level,updated_at)
@@ -36,38 +38,65 @@ export async function cacheProduct(product:{
   );
 }
 
+export async function cacheProducts(products: Parameters<typeof cacheProduct>[0][]) {
+  if (!(await offlineDb.available())) return;
+  for (const product of products) await cacheProduct(product);
+}
+
 export async function queueOfflineSale(sale:{
   id:string; invoiceNo:string; total:number; paymentMethod:string; discount:number;
   customerId?:string|null; items:{id:string;productId:string;qty:number;price:number;unitCost:number}[];
 }) {
+  if (!(await offlineDb.available())) throw new Error("Offline database is unavailable.");
   const createdAt = new Date().toISOString();
   await offlineDb.exec("BEGIN");
   try {
+    for (const item of sale.items) {
+      const rows = await offlineDb.query<{qty:number}>("SELECT qty FROM products WHERE id=?", [item.productId]);
+      if (!rows[0] || Number(rows[0].qty) < item.qty) throw new Error("Insufficient offline stock.");
+    }
     await offlineDb.exec(
       "INSERT INTO sales(id,invoice_no,total,payment_method,discount,customer_id,status,created_at) VALUES(?,?,?,?,?,?,?,?)",
       [sale.id,sale.invoiceNo,sale.total,sale.paymentMethod,sale.discount,sale.customerId??null,"completed",createdAt]
     );
     for (const item of sale.items) {
-      await offlineDb.exec(
-        "INSERT INTO sale_items(id,sale_id,product_id,qty,price,unit_cost) VALUES(?,?,?,?,?,?)",
-        [item.id,sale.id,item.productId,item.qty,item.price,item.unitCost]
-      );
-      await offlineDb.exec(
-        "UPDATE products SET qty=qty-?,updated_at=? WHERE id=? AND qty>=?",
-        [item.qty,createdAt,item.productId,item.qty]
-      );
-      await offlineDb.exec(
-        "INSERT INTO stock_movements(id,product_id,type,quantity,reason,reference_id,created_at) VALUES(?,?,?,?,?,?,?)",
-        [crypto.randomUUID(),item.productId,"sale",-item.qty,"offline_sale",sale.id,createdAt]
-      );
+      await offlineDb.exec("INSERT INTO sale_items(id,sale_id,product_id,qty,price,unit_cost) VALUES(?,?,?,?,?,?)",
+        [item.id,sale.id,item.productId,item.qty,item.price,item.unitCost]);
+      await offlineDb.exec("UPDATE products SET qty=qty-?,updated_at=? WHERE id=?",
+        [item.qty,createdAt,item.productId]);
+      await offlineDb.exec("INSERT INTO stock_movements(id,product_id,type,quantity,reason,reference_id,created_at) VALUES(?,?,?,?,?,?,?)",
+        [crypto.randomUUID(),item.productId,"sale",-item.qty,"offline_sale",sale.id,createdAt]);
     }
-    await offlineDb.exec(
-      "INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",
-      [crypto.randomUUID(),"sale",sale.id,"create",JSON.stringify(sale),createdAt,"pending"]
-    );
+    await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",
+      [crypto.randomUUID(),"sale",sale.id,"create",JSON.stringify(sale),createdAt,"pending"]);
     await offlineDb.exec("COMMIT");
   } catch (error) {
     await offlineDb.exec("ROLLBACK");
     throw error;
   }
+}
+
+export async function syncPendingSales() {
+  if (!isOnline() || !(await offlineDb.available())) return { synced:0, failed:0 };
+  const rows = await offlineDb.query<{id:string;entity_id:string;payload:string;attempts:number}>(
+    "SELECT id,entity_id,payload,attempts FROM sync_queue WHERE entity='sale' AND operation='create' AND status='pending' ORDER BY created_at"
+  );
+  let synced=0, failed=0;
+  for (const row of rows) {
+    try {
+      const sale=JSON.parse(row.payload);
+      await apiRequest("/sales",{method:"POST",body:JSON.stringify({
+        invoiceNo:sale.invoiceNo,paymentMethod:sale.paymentMethod,discount:sale.discount,
+        customerId:sale.customerId||undefined,items:sale.items.map((i:any)=>({variantId:i.productId,qty:i.qty,price:i.price}))
+      })});
+      await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",
+        [new Date().toISOString(),row.id]);
+      synced++;
+    } catch (error) {
+      await offlineDb.exec("UPDATE sync_queue SET attempts=attempts+1,last_error=? WHERE id=?",
+        [error instanceof Error ? error.message : "Sync failed",row.id]);
+      failed++;
+    }
+  }
+  return { synced, failed };
 }
