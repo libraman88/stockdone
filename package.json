@@ -28,7 +28,6 @@
     "concurrently": "latest",
     "cross-env": "latest",
     "wait-on": "latest",
-    "electron-rebuild": "^3.7.2",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9"
   }
