@@ -76,7 +76,10 @@ export async function retryOfflineSyncConflict(conflictId:string){
   if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
   await offlineDb.exec("UPDATE sync_queue SET status='pending',last_error=NULL WHERE entity_id=(SELECT entity_id FROM sync_conflicts WHERE id=?) AND entity='sale'",[conflictId]);
   await offlineDb.exec("UPDATE sync_conflicts SET resolution='retrying' WHERE id=?",[conflictId]);
-  return syncPendingSales();
+  const result=await syncPendingSales();
+  if(result.synced>0) await offlineDb.exec("UPDATE sync_conflicts SET resolution='resolved' WHERE id=?",[conflictId]);
+  else await offlineDb.exec("UPDATE sync_conflicts SET resolution='pending' WHERE id=?",[conflictId]);
+  return result;
 }
 export async function resolveOfflineSyncConflict(conflictId:string){
   if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
