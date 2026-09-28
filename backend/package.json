@@ -15,7 +15,8 @@
     "pg": "latest",
     "zod": "latest",
     "bcryptjs": "latest",
-    "jsonwebtoken": "latest"
+    "jsonwebtoken": "latest",
+    "nodemailer": "latest"
   },
   "devDependencies": {
     "@types/cors": "latest",
@@ -24,6 +25,7 @@
     "tsx": "latest",
     "typescript": "latest",
     "@types/bcryptjs": "latest",
-    "@types/jsonwebtoken": "latest"
+    "@types/jsonwebtoken": "latest",
+    "@types/nodemailer": "latest"
   }
 }
