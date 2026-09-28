@@ -17,7 +17,8 @@
     "typescript": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "electron": "latest"
+    "electron": "latest",
+    "jsbarcode": "^3.11.6"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "latest",
