@@ -1,4 +1,4 @@
-import { apiRequest } from "./api";
+import { apiRequest, ApiError } from "./api";
 import { isOnline } from "./sync";
 
 type OfflineBridge = { status:()=>Promise<{available:boolean}>; exec:(sql:string,params?:unknown[])=>Promise<unknown>; query:<T=Record<string,unknown>>(sql:string,params?:unknown[])=>Promise<T[]> };
@@ -43,14 +43,25 @@ export async function syncPendingSales() {
       const sale=JSON.parse(row.payload);
       await apiRequest("/sales",{method:"POST",body:JSON.stringify({invoiceNo:sale.invoiceNo,clientReference:sale.id,paymentMethod:sale.paymentMethod,discount:sale.discount,customerId:sale.customerId||undefined,received:sale.received,change:sale.change,items:sale.items.map((i:any)=>({variantId:i.productId,qty:i.qty,price:i.price}))})});
       await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
-    }catch(e){await offlineDb.exec("UPDATE sync_queue SET attempts=attempts+1,last_error=? WHERE id=?",[e instanceof Error?e.message:"Sync failed",row.id]);failed++;}
+    }catch(e){
+      const message=e instanceof Error?e.message:"Sync failed";
+      const status=e instanceof ApiError?e.status:0;
+      const permanent=status>=400&&status<500&&status!==401&&status!==408&&status!==429;
+      if(permanent){
+        await offlineDb.exec("UPDATE sync_queue SET status='failed',attempts=attempts+1,last_error=? WHERE id=?",[message,row.id]);
+        await offlineDb.exec("INSERT INTO sync_conflicts(id,entity,entity_id,local_payload,server_payload,detected_at,resolution) VALUES(?,?,?,?,?,?,'pending')",[crypto.randomUUID(),"sale",row.entity_id,row.payload,JSON.stringify({error:message,status}),new Date().toISOString()]);
+      } else {
+        await offlineDb.exec("UPDATE sync_queue SET attempts=attempts+1,last_error=? WHERE id=?",[message,row.id]);
+      }
+      failed++;
+    }
   }
   return{synced,failed};
 }
 
-export function startOfflineSync() {
+export function startOfflineSync(onSynced?: (count:number)=>void) {
   if(typeof window==="undefined")return()=>{};
-  const run=()=>{void syncPendingSales()};
+  const run=()=>{void syncPendingSales().then(r=>{if(r.synced>0)onSynced?.(r.synced)})};
   window.addEventListener("online",run);
   run();
   const timer=window.setInterval(run,30000);
