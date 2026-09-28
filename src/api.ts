@@ -76,3 +76,7 @@ export function receiveStockTransfer(id:string){return apiRequest<{id:string;sta
 export function getStockTransfers(){return apiRequest<any[]>("/inventory/transfers");}
 
 export function getPurchases(){return apiRequest<any[]>("/purchases");}
+
+export type Supplier={id:string;name:string;phone?:string|null;address?:string|null};
+export function getSuppliers(){return apiRequest<Supplier[]>("/suppliers");}
+export function createSupplier(input:{name:string;phone?:string;address?:string}){return apiRequest<Supplier>("/suppliers",{method:"POST",body:JSON.stringify(input)});}
