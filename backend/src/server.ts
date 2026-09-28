@@ -42,7 +42,7 @@ app.use("/api/customers", authenticate);
 app.use("/api/returns", authenticate);
 app.use("/api/reports", authenticate);
 
-app.get("/api/sales",authenticate,async(_req,res)=>{try{const r=await pool.query("SELECT id,invoice_no AS \"invoiceNo\",total,discount,payment_method AS \"paymentMethod\",customer_id AS \"customerId\",created_at AS \"createdAt\" FROM sales WHERE business_id=$1 ORDER BY created_at DESC LIMIT 1000",[process.env.DEFAULT_BUSINESS_ID]);res.json(r.rows)}catch{res.status(500).json({error:"Unable to load sales"})}});
+app.get("/api/sales",authenticate,async(_req,res)=>{try{const r=await pool.query("SELECT s.id,s.invoice_no AS \"invoiceNo\",s.total,s.discount,s.payment_method AS \"paymentMethod\",s.customer_id AS \"customerId\",s.created_at AS \"createdAt\",COALESCE((SELECT json_agg(json_build_object('productId',si.variant_id,'variantId',si.variant_id,'qty',si.quantity,'price',si.unit_price)) FROM sale_items si WHERE si.sale_id=s.id),'[]'::json) AS items FROM sales s WHERE s.business_id=$1 ORDER BY s.created_at DESC LIMIT 1000",[process.env.DEFAULT_BUSINESS_ID]);res.json(r.rows)}catch{res.status(500).json({error:"Unable to load sales"})}});
 
 app.post("/api/sales",async(req,res)=>{const parsed=saleSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:"Invalid sale data"});const s=parsed.data;const client=await pool.connect();try{await client.query("BEGIN");let subtotal=0;for(const i of s.items){const r=await client.query("SELECT quantity FROM inventory WHERE branch_id=$1 AND variant_id=$2 FOR UPDATE",[process.env.DEFAULT_BRANCH_ID,i.variantId]);if(!r.rowCount||r.rows[0].quantity<i.qty)throw new Error("INSUFFICIENT_STOCK");subtotal+=i.qty*i.price}const total=Math.max(0,subtotal-s.discount);const saleId=crypto.randomUUID();if(s.paymentMethod==="other"&&!s.customerId)throw new Error("CUSTOMER_REQUIRED_FOR_CREDIT");if(s.customerId){const cr=await client.query("SELECT id FROM customers WHERE id=$1 AND business_id=$2 FOR UPDATE",[s.customerId,process.env.DEFAULT_BUSINESS_ID]);if(!cr.rowCount)throw new Error("CUSTOMER_NOT_FOUND");}await client.query("INSERT INTO sales(id,business_id,branch_id,invoice_no,customer_id,subtotal,discount,total,payment_method) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)",[saleId,process.env.DEFAULT_BUSINESS_ID,process.env.DEFAULT_BRANCH_ID,s.invoiceNo,s.customerId||null,subtotal,s.discount,total,s.paymentMethod]);if(s.paymentMethod==="cash" && (s.received??0)<total) throw new Error("INSUFFICIENT_CASH");const received=s.paymentMethod==="cash"?(s.received??0):total;const change=s.paymentMethod==="cash"?Math.max(0,received-total):0;await client.query("INSERT INTO payments(id,business_id,branch_id,sale_id,method,amount,received,change_amount) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",[crypto.randomUUID(),process.env.DEFAULT_BUSINESS_ID,process.env.DEFAULT_BRANCH_ID,saleId,s.paymentMethod,total,received,change]);if(s.paymentMethod==="other"&&s.customerId){await client.query("UPDATE customers SET balance=balance+$1 WHERE id=$2",[total,s.customerId]);await client.query("INSERT INTO customer_transactions(id,customer_id,type,amount,reference_id,note) VALUES($1,$2,'credit_sale',$3,$4,$5)",[crypto.randomUUID(),s.customerId,total,saleId,"POS credit sale"]);}for(const i of s.items){await client.query("INSERT INTO sale_items(id,sale_id,variant_id,quantity,unit_price) VALUES($1,$2,$3,$4,$5)",[crypto.randomUUID(),saleId,i.variantId,i.qty,i.price]);await client.query("UPDATE inventory SET quantity=quantity-$1 WHERE branch_id=$2 AND variant_id=$3",[i.qty,process.env.DEFAULT_BRANCH_ID,i.variantId]);await client.query("INSERT INTO stock_movements(id,branch_id,variant_id,type,quantity,reference_id) VALUES($1,$2,$3,'sale',$4,$5)",[crypto.randomUUID(),process.env.DEFAULT_BRANCH_ID,i.variantId,-i.qty,saleId])}await client.query("COMMIT");res.status(201).json({id:saleId,invoiceNo:s.invoiceNo,total})}catch(e){await client.query("ROLLBACK");res.status(e instanceof Error&&["INSUFFICIENT_STOCK","CUSTOMER_REQUIRED_FOR_CREDIT","CUSTOMER_NOT_FOUND","INSUFFICIENT_CASH"].includes(e.message)?409:500).json({error:e instanceof Error?e.message:"Sale failed"})}finally{client.release()}});
 
@@ -61,9 +61,65 @@ app.post("/api/customers",authenticate,async(req,res)=>{const p=customerSchema.s
 app.post("/api/customers/:id/payment",authenticate,async(req,res)=>{const amount=Number(req.body.amount);if(!Number.isFinite(amount)||amount<=0)return res.status(400).json({error:"Invalid payment amount"});const client=await pool.connect();try{await client.query("BEGIN");const r=await client.query("SELECT balance FROM customers WHERE id=$1 FOR UPDATE",[req.params.id]);if(!r.rowCount){await client.query("ROLLBACK");return res.status(404).json({error:"Customer not found"});}const next=Math.max(0,Number(r.rows[0].balance)-amount);await client.query("UPDATE customers SET balance=$1 WHERE id=$2",[next,req.params.id]);await client.query("INSERT INTO customer_transactions(id,customer_id,type,amount,note) VALUES($1,$2,'payment',$3,$4)",[crypto.randomUUID(),req.params.id,amount,req.body.note||"Khata payment"]);await client.query("COMMIT");res.json({customerId:req.params.id,balance:next})}catch{await client.query("ROLLBACK");res.status(500).json({error:"Payment failed"})}finally{client.release()}});
 
 
-const returnSchema=z.object({saleId:z.string().uuid(),type:z.enum(["return","exchange"]),refundAmount:z.number().nonnegative().default(0),items:z.array(z.object({variantId:z.string().uuid(),quantity:z.number().int().positive(),unitPrice:z.number().nonnegative()})).min(1)});
-app.post("/api/returns",authenticate,async(req,res)=>{const p=returnSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:"Invalid return data"});const x=p.data,client=await pool.connect();try{await client.query("BEGIN");const r=await client.query("SELECT id,branch_id FROM sales WHERE id=$1 FOR UPDATE",[x.saleId]);if(!r.rowCount)throw new Error("SALE_NOT_FOUND");const id=crypto.randomUUID();await client.query("INSERT INTO returns(id,business_id,branch_id,sale_id,type,refund_amount) VALUES($1,$2,$3,$4,$5,$6)",[id,process.env.DEFAULT_BUSINESS_ID,process.env.DEFAULT_BRANCH_ID,x.saleId,x.type,x.refundAmount]);for(const i of x.items){await client.query("INSERT INTO return_items(id,return_id,variant_id,quantity,unit_price) VALUES($1,$2,$3,$4,$5)",[crypto.randomUUID(),id,i.variantId,i.quantity,i.unitPrice]);await client.query("UPDATE inventory SET quantity=quantity+$1 WHERE branch_id=$2 AND variant_id=$3",[i.quantity,process.env.DEFAULT_BRANCH_ID,i.variantId]);await client.query("INSERT INTO stock_movements(id,branch_id,variant_id,type,quantity,reference_id) VALUES($1,$2,$3,'sale_return',$4,$5)",[crypto.randomUUID(),process.env.DEFAULT_BRANCH_ID,i.variantId,i.quantity,id])}await client.query("COMMIT");res.status(201).json({id,type:x.type,refundAmount:x.refundAmount})}catch(e){await client.query("ROLLBACK");res.status(e instanceof Error&&e.message==="SALE_NOT_FOUND"?404:500).json({error:e instanceof Error?e.message:"Return failed"})}finally{client.release()}});
-
+const returnSchema=z.object({
+  saleId:z.string().uuid(),
+  type:z.enum(["return","exchange"]),
+  refundAmount:z.number().nonnegative().default(0),
+  items:z.array(z.object({variantId:z.string().uuid(),quantity:z.number().int().positive(),unitPrice:z.number().nonnegative()})).min(1),
+  exchangeItems:z.array(z.object({variantId:z.string().uuid(),quantity:z.number().int().positive(),unitPrice:z.number().nonnegative()})).default([])
+});
+app.post("/api/returns",authenticate,requirePermission("returns"),async(req,res)=>{
+  const p=returnSchema.safeParse(req.body);
+  if(!p.success)return res.status(400).json({error:"Invalid return data"});
+  const x=p.data,client=await pool.connect();
+  try{
+    await client.query("BEGIN");
+    const sale=await client.query("SELECT id,branch_id FROM sales WHERE id=$1 AND business_id=$2 FOR UPDATE",[x.saleId,process.env.DEFAULT_BUSINESS_ID]);
+    if(!sale.rowCount)throw new Error("SALE_NOT_FOUND");
+    const branchId=sale.rows[0].branch_id;
+    if(branchId!==process.env.DEFAULT_BRANCH_ID)throw new Error("BRANCH_MISMATCH");
+    let returnedValue=0;
+    for(const i of x.items){
+      const sold=await client.query("SELECT si.id,si.quantity,si.unit_price FROM sale_items si WHERE si.sale_id=$1 AND si.variant_id=$2 FOR UPDATE",[x.saleId,i.variantId]);
+      if(!sold.rowCount)throw new Error("ITEM_NOT_IN_SALE");
+      const already=await client.query("SELECT COALESCE(SUM(ri.quantity),0) AS qty FROM return_items ri JOIN returns r ON r.id=ri.return_id WHERE r.sale_id=$1 AND ri.variant_id=$2 AND ri.direction='in'",[x.saleId,i.variantId]);
+      const remaining=Number(sold.rows[0].quantity)-Number(already.rows[0].qty);
+      if(i.quantity>remaining)throw new Error("RETURN_QTY_EXCEEDS_SOLD");
+      returnedValue+=Number(sold.rows[0].unit_price)*i.quantity;
+    }
+    let exchangeValue=0;
+    if(x.type==="exchange"){
+      if(x.exchangeItems.length===0)throw new Error("EXCHANGE_ITEM_REQUIRED");
+      for(const i of x.exchangeItems){
+        const inv=await client.query("SELECT quantity FROM inventory WHERE branch_id=$1 AND variant_id=$2 FOR UPDATE",[branchId,i.variantId]);
+        if(!inv.rowCount||Number(inv.rows[0].quantity)<i.quantity)throw new Error("EXCHANGE_STOCK_UNAVAILABLE");
+        exchangeValue+=i.unitPrice*i.quantity;
+      }
+    } else if(x.exchangeItems.length) throw new Error("EXCHANGE_ITEMS_NOT_ALLOWED");
+    const calculatedRefund=x.type==="return"?returnedValue:Math.max(0,returnedValue-exchangeValue);
+    if(Math.abs(x.refundAmount-calculatedRefund)>0.01)throw new Error("REFUND_AMOUNT_MISMATCH");
+    const priceDifference=x.type==="exchange"?Math.max(0,exchangeValue-returnedValue):0;
+    const id=crypto.randomUUID();
+    await client.query("INSERT INTO returns(id,business_id,branch_id,sale_id,type,refund_amount,price_difference) VALUES($1,$2,$3,$4,$5,$6,$7)",[id,process.env.DEFAULT_BUSINESS_ID,branchId,x.saleId,x.type,calculatedRefund,priceDifference]);
+    for(const i of x.items){
+      await client.query("INSERT INTO return_items(id,return_id,variant_id,quantity,unit_price,direction) VALUES($1,$2,$3,$4,$5,'in')",[crypto.randomUUID(),id,i.variantId,i.quantity,i.unitPrice]);
+      await client.query("UPDATE inventory SET quantity=quantity+$1 WHERE branch_id=$2 AND variant_id=$3",[i.quantity,branchId,i.variantId]);
+      await client.query("INSERT INTO stock_movements(id,branch_id,variant_id,type,quantity,reason,reference_id) VALUES($1,$2,$3,'sale_return',$4,'Customer return',$5)",[crypto.randomUUID(),branchId,i.variantId,i.quantity,id]);
+    }
+    for(const i of x.exchangeItems){
+      await client.query("INSERT INTO return_items(id,return_id,variant_id,quantity,unit_price,direction) VALUES($1,$2,$3,$4,$5,'out')",[crypto.randomUUID(),id,i.variantId,i.quantity,i.unitPrice]);
+      await client.query("UPDATE inventory SET quantity=quantity-$1 WHERE branch_id=$2 AND variant_id=$3",[i.quantity,branchId,i.variantId]);
+      await client.query("INSERT INTO stock_movements(id,branch_id,variant_id,type,quantity,reason,reference_id) VALUES($1,$2,$3,'exchange_out',$4,'Exchange replacement',$5)",[crypto.randomUUID(),branchId,i.variantId,-i.quantity,id]);
+    }
+    await client.query("COMMIT");
+    res.status(201).json({id,type:x.type,refundAmount:calculatedRefund,priceDifference});
+  }catch(e){
+    await client.query("ROLLBACK");
+    const code=e instanceof Error?e.message:"Return failed";
+    const conflicts=["ITEM_NOT_IN_SALE","RETURN_QTY_EXCEEDS_SOLD","EXCHANGE_ITEM_REQUIRED","EXCHANGE_STOCK_UNAVAILABLE","EXCHANGE_ITEMS_NOT_ALLOWED","REFUND_AMOUNT_MISMATCH","BRANCH_MISMATCH"];
+    res.status(code==="SALE_NOT_FOUND"?404:conflicts.includes(code)?409:500).json({error:code});
+  }finally{client.release()}
+});
 
 app.post("/api/inventory/adjustments",authenticate,requirePermission("inventory"),async(req,res)=>{const s=z.object({variantId:z.string().uuid(),quantityDelta:z.number().int(),reason:z.enum(["Damaged","Missing","Physical Count","Correction","Other"]),note:z.string().optional()}).safeParse(req.body);if(!s.success||s.data.quantityDelta===0)return res.status(400).json({error:"Invalid adjustment"});const x=s.data,client=await pool.connect();try{await client.query("BEGIN");const q=await client.query("SELECT quantity FROM inventory WHERE branch_id=$1 AND variant_id=$2 FOR UPDATE",[process.env.DEFAULT_BRANCH_ID,x.variantId]);if(!q.rowCount)throw new Error("INVENTORY_NOT_FOUND");const next=Number(q.rows[0].quantity)+x.quantityDelta;if(next<0)throw new Error("INSUFFICIENT_STOCK");await client.query("UPDATE inventory SET quantity=$1 WHERE branch_id=$2 AND variant_id=$3",[next,process.env.DEFAULT_BRANCH_ID,x.variantId]);const id=crypto.randomUUID();await client.query("INSERT INTO stock_adjustments(id,business_id,branch_id,variant_id,quantity_delta,reason,note,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",[id,process.env.DEFAULT_BUSINESS_ID,process.env.DEFAULT_BRANCH_ID,x.variantId,x.quantityDelta,x.reason,x.note||null,req.user?.id||null]);await client.query("INSERT INTO stock_movements(id,branch_id,variant_id,type,quantity,reason,reference_id) VALUES($1,$2,$3,'adjustment',$4,$5,$6)",[crypto.randomUUID(),process.env.DEFAULT_BRANCH_ID,x.variantId,x.quantityDelta,x.reason,id]);await client.query("COMMIT");res.status(201).json({id,quantity:next})}catch(e){await client.query("ROLLBACK");res.status(e instanceof Error&&["INVENTORY_NOT_FOUND","INSUFFICIENT_STOCK"].includes(e.message)?409:500).json({error:e instanceof Error?e.message:"Adjustment failed"})}finally{client.release()}});
 app.post("/api/inventory/transfers",authenticate,requirePermission("inventory"),async(req,res)=>{const s=z.object({toBranchId:z.string().uuid(),items:z.array(z.object({variantId:z.string().uuid(),quantity:z.number().int().positive()})).min(1)}).safeParse(req.body);if(!s.success||s.data.toBranchId===process.env.DEFAULT_BRANCH_ID)return res.status(400).json({error:"Invalid transfer"});const x=s.data,client=await pool.connect();try{await client.query("BEGIN");const tid=crypto.randomUUID();await client.query("INSERT INTO stock_transfers(id,business_id,from_branch_id,to_branch_id,status,created_by) VALUES($1,$2,$3,$4,'sent',$5)",[tid,process.env.DEFAULT_BUSINESS_ID,process.env.DEFAULT_BRANCH_ID,x.toBranchId,req.user?.id||null]);for(const item of x.items){const q=await client.query("SELECT quantity FROM inventory WHERE branch_id=$1 AND variant_id=$2 FOR UPDATE",[process.env.DEFAULT_BRANCH_ID,item.variantId]);if(!q.rowCount||Number(q.rows[0].quantity)<item.quantity)throw new Error("INSUFFICIENT_STOCK");await client.query("UPDATE inventory SET quantity=quantity-$1 WHERE branch_id=$2 AND variant_id=$3",[item.quantity,process.env.DEFAULT_BRANCH_ID,item.variantId]);await client.query("INSERT INTO stock_transfer_items(id,transfer_id,variant_id,quantity) VALUES($1,$2,$3,$4)",[crypto.randomUUID(),tid,item.variantId,item.quantity]);await client.query("INSERT INTO stock_movements(id,branch_id,variant_id,type,quantity,reason,reference_id) VALUES($1,$2,$3,'transfer_out',$4,'Branch transfer',$5)",[crypto.randomUUID(),process.env.DEFAULT_BRANCH_ID,item.variantId,-item.quantity,tid]);}await client.query("COMMIT");res.status(201).json({id:tid,status:"sent"})}catch(e){await client.query("ROLLBACK");res.status(e instanceof Error&&e.message==="INSUFFICIENT_STOCK"?409:500).json({error:e instanceof Error?e.message:"Transfer failed"})}finally{client.release()}});
