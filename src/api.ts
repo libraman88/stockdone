@@ -113,3 +113,8 @@ export function getPurchases(){return apiRequest<any[]>("/purchases");}
 export type Supplier={id:string;name:string;phone?:string|null;address?:string|null};
 export function getSuppliers(){return apiRequest<Supplier[]>("/suppliers");}
 export function createSupplier(input:{name:string;phone?:string;address?:string}){return apiRequest<Supplier>("/suppliers",{method:"POST",body:JSON.stringify(input)});}
+
+export type InventorySummary={product_id:string;name:string;sku:string;variant_id:string;size:string|null;color:string|null;barcode:string|null;quantity:number;cost:number;price:number;reorder_level:number};
+export function getInventorySummary(){return apiRequest<InventorySummary[]>("/inventory/summary");}
+export type StockMovementRow={id:string;branch_id:string;variant_id:string;type:string;quantity:number;reason:string|null;reference_id:string|null;created_at:string;name:string;sku:string;size:string|null;color:string|null};
+export function getInventoryMovements(){return apiRequest<StockMovementRow[]>("/inventory/movements");}
