@@ -42,6 +42,8 @@ export function getProducts() {
   return apiRequest<Product[]>("/products").then(rows => rows.map((p: any) => ({...p, variantId: p.variantId || p.variant_id, reorderLevel: Number(p.reorderLevel ?? p.reorder_level ?? 5), qty: Number(p.qty ?? 0), cost: Number(p.cost ?? 0), price: Number(p.price ?? 0)})));
 }
 
+export function updateProduct(id:string, product: Partial<Omit<Product,"id">>) { return apiRequest<{ok:boolean;id:string}>(`/products/${id}`, {method:"PUT", body:JSON.stringify({name:product.name,sku:product.sku,categoryId:null,size:product.size||null,color:product.color||null,barcode:product.barcode||null,cost:product.cost,price:product.price,qty:product.qty,reorderLevel:product.reorderLevel})}); }
+
 export function createProduct(product: Omit<Product,"id">) {
   return apiRequest<{id:string;variantId:string}>("/products", {
     method: "POST",
