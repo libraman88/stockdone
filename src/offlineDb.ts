@@ -57,7 +57,7 @@ export async function syncPendingSales() {
       const permanent=status>=400&&status<500&&status!==401&&status!==408&&status!==429;
       if(permanent){
         await offlineDb.exec("UPDATE sync_queue SET status='failed',attempts=attempts+1,last_error=? WHERE id=?",[message,row.id]);
-        await offlineDb.exec("INSERT INTO sync_conflicts(id,entity,entity_id,local_payload,server_payload,detected_at,resolution) VALUES(?,?,?,?,?,?,'pending')",[crypto.randomUUID(),"sale",row.entity_id,row.payload,JSON.stringify({error:message,status}),new Date().toISOString()]);
+        await offlineDb.exec("INSERT INTO sync_conflicts(id,entity,entity_id,local_payload,server_payload,detected_at,resolution) SELECT ?,?,?,?,?,?,'pending' WHERE NOT EXISTS (SELECT 1 FROM sync_conflicts WHERE entity='sale' AND entity_id=? AND resolution='pending')",[crypto.randomUUID(),"sale",row.entity_id,row.payload,JSON.stringify({error:message,status}),new Date().toISOString(),row.entity_id]);
       } else {
         await offlineDb.exec("UPDATE sync_queue SET attempts=attempts+1,last_error=? WHERE id=?",[message,row.id]);
       }
