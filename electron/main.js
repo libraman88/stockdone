@@ -3,6 +3,7 @@ const path = require("path");
 const fs = require("fs");
 
 let db = null;
+let mainWindow = null;
 
 const OFFLINE_SCHEMA = [
   "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
@@ -40,6 +41,7 @@ function createWindow() {
     width: 1440, height: 900, minWidth: 1100, minHeight: 700,
     webPreferences: { contextIsolation: true, nodeIntegration: false, preload: path.join(__dirname, "preload.js") }
   });
+  mainWindow = win;
   if (process.env.VITE_DEV_SERVER_URL) win.loadURL(process.env.VITE_DEV_SERVER_URL);
   else win.loadFile(path.join(__dirname, "../dist/index.html"));
 }
@@ -50,6 +52,27 @@ app.whenReady().then(() => {
   ipcMain.handle("offline-db:exec", (_event, sql, params = []) => {
     if (!db) throw new Error("Offline SQLite is unavailable.");
     return db.prepare(sql).run(...params);
+  });
+  ipcMain.handle("hardware:printers", async () => {
+    if (!mainWindow) return [];
+    return mainWindow.webContents.getPrintersAsync();
+  });
+  ipcMain.handle("hardware:print", async (_event, html, paper = "A4", deviceName = "") => {
+    const printWindow = new BrowserWindow({show:false, webPreferences:{contextIsolation:true,nodeIntegration:false}});
+    try {
+      await printWindow.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(String(html)));
+      await new Promise(resolve => setTimeout(resolve, 250));
+      const pageSize = paper === "80mm" ? {width:80000,height:2000000} : "A4";
+      return await new Promise((resolve, reject) => {
+        printWindow.webContents.print({silent:Boolean(deviceName),deviceName:deviceName||undefined,pageSize,printBackground:true}, (success,failureReason) => {
+          printWindow.close();
+          if(success) resolve({ok:true}); else reject(new Error(failureReason || "Printer failed"));
+        });
+      });
+    } catch (error) {
+      if (!printWindow.isDestroyed()) printWindow.close();
+      throw error;
+    }
   });
   ipcMain.handle("offline-db:query", (_event, sql, params = []) => {
     if (!db) throw new Error("Offline SQLite is unavailable.");
