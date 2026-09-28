@@ -69,7 +69,14 @@ export async function syncPendingSales() {
 
 export function startOfflineSync(onSynced?: (count:number)=>void) {
   if(typeof window==="undefined")return()=>{};
-  const run=()=>{void syncPendingSales().then(r=>{if(r.synced>0)onSynced?.(r.synced)})};
+  let running=false;
+  const run=()=>{
+    if(running)return;
+    running=true;
+    void syncPendingSales()
+      .then(r=>{if(r.synced>0)onSynced?.(r.synced)})
+      .finally(()=>{running=false});
+  };
   window.addEventListener("online",run);
   run();
   const timer=window.setInterval(run,30000);
