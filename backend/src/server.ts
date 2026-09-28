@@ -66,17 +66,30 @@ app.get("/api/reports/summary",async(req,res)=>{
 });
 
 
+const JWT_SECRET=process.env.JWT_SECRET;
+if(!JWT_SECRET) throw new Error("JWT_SECRET is required");
+
 const rolePermissions:Record<string,string[]>={owner:["*"],manager:["sales","products","inventory","purchases","customers","returns","reports"],cashier:["sales","customers","print"]};
 
-function requireAuthPermission(permission:string){return [authenticate,requirePermission(permission)]}
-function requirePermission(permission:string){return (req:any,res:any,next:any)=>{const role=String(req.user?.role||"");const allowed=rolePermissions[role]||[];if(!allowed.includes("*")&&!allowed.includes(permission))return res.status(403).json({error:"Permission denied"});next()}}
-app.use("/api/admin",requirePermission("admin"),(_req,res)=>res.status(501).json({error:"Admin API not implemented"}));
+function authenticate(req:any,res:any,next:any){
+  const raw=String(req.headers.authorization||"");
+  if(!raw.startsWith("Bearer ")) return res.status(401).json({error:"Authentication required"});
+  try{req.user=jwt.verify(raw.slice(7),JWT_SECRET);next()}
+  catch{return res.status(401).json({error:"Invalid or expired session"})}
+}
+function requirePermission(permission:string){
+  return (req:any,res:any,next:any)=>{
+    const role=String(req.user?.role||"");
+    const allowed=rolePermissions[role]||[];
+    if(!allowed.includes("*")&&!allowed.includes(permission)) return res.status(403).json({error:"Permission denied"});
+    next();
+  };
+}
+app.use("/api/admin",authenticate,requirePermission("admin"),(_req,res)=>res.status(501).json({error:"Admin API not implemented"}));
 
 
-const JWT_SECRET=process.env.JWT_SECRET||"change-this-in-production";
 const loginSchema=z.object({username:z.string().min(1),password:z.string().min(1)});
 app.post("/api/auth/login",async(req,res)=>{const p=loginSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:"Invalid credentials"});try{const r=await pool.query("SELECT id,username,name,role,password_hash,active FROM users WHERE business_id=$1 AND username=$2 LIMIT 1",[process.env.DEFAULT_BUSINESS_ID,p.data.username]);if(!r.rowCount||!r.rows[0].active||!(await bcrypt.compare(p.data.password,r.rows[0].password_hash)))return res.status(401).json({error:"Invalid username or password"});const u=r.rows[0],token=jwt.sign({sub:u.id,role:u.role,username:u.username},JWT_SECRET,{expiresIn:"8h"});res.json({token,user:{id:u.id,username:u.username,name:u.name,role:u.role}})}catch{res.status(500).json({error:"Login failed"})}});
-function authenticate(req:any,res:any,next:any){const raw=String(req.headers.authorization||"");if(!raw.startsWith("Bearer "))return res.status(401).json({error:"Authentication required"});try{req.user=jwt.verify(raw.slice(7),JWT_SECRET);next()}catch{return res.status(401).json({error:"Invalid or expired session"})}}
 app.get("/api/auth/me",authenticate,(req:any,res)=>res.json({user:req.user}));
 
 
