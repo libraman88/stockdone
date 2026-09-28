@@ -40,3 +40,8 @@ export function createProduct(product: Omit<Product,"id">) {
     })
   });
 }
+
+export type ApiSaleItem = { variantId: string; qty: number; price: number };
+export function createSale(input: { invoiceNo: string; paymentMethod: "cash"|"card"|"bank"|"other"; discount: number; customerId?: string; items: ApiSaleItem[] }) {
+  return apiRequest<{id:string;invoiceNo:string;total:number}>("/sales", { method: "POST", body: JSON.stringify(input) });
+}
