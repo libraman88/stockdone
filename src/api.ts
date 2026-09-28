@@ -81,6 +81,8 @@ export function getAdminRoles(){return apiRequest<AdminRole[]>("/admin/roles");}
 export function getAdminPermissions(){return apiRequest<AdminPermission[]>("/admin/permissions");}
 export function createAdminRole(input:{name:string;permissionCodes:string[]}){return apiRequest<AdminRole>("/admin/roles",{method:"POST",body:JSON.stringify(input)});}
 export function updateAdminRolePermissions(id:string,permissionCodes:string[]){return apiRequest<{ok:boolean}>(`/admin/roles/${id}/permissions`,{method:"PUT",body:JSON.stringify({permissionCodes})});}
+export type AuditLog={id:string;user_id:string|null;action:string;entity:string;entity_id:string|null;details:any;created_at:string};
+export function getAuditLogs(){return apiRequest<AuditLog[]>("/audit-logs");}
 export type AdminUser={id:string;username:string;name:string;role:"owner"|"manager"|"cashier";active:boolean;created_at:string};
 export function getAdminUsers(){return apiRequest<AdminUser[]>("/admin/users");}
 export function createAdminUser(input:{username:string;name:string;role:"manager"|"cashier";password:string}){return apiRequest<AdminUser>("/admin/users",{method:"POST",body:JSON.stringify(input)});}
