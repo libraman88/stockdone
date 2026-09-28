@@ -74,3 +74,5 @@ export function createBranch(input:{name:string;code:string}){return apiRequest<
 export function receiveStockTransfer(id:string){return apiRequest<{id:string;status:string}>(`/inventory/transfers/${id}/receive`,{method:"POST"});}
 
 export function getStockTransfers(){return apiRequest<any[]>("/inventory/transfers");}
+
+export function getPurchases(){return apiRequest<any[]>("/purchases");}
