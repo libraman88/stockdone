@@ -9,7 +9,7 @@ import { settingsStorage } from "./settings";
 import { invoiceHtml } from "./invoice";
 import { authStorage, type User, type Role } from "./auth";
 import { canOpen } from "./permissions";
-import { login as apiLogin, setupOwner as apiSetupOwner, setApiToken, requestPasswordReset, confirmPasswordReset } from "./api";
+import { login as apiLogin, setupOwner as apiSetupOwner, setApiToken, requestPasswordReset, confirmPasswordReset, getPurchases as apiGetPurchases, getInventorySummary as apiGetInventorySummary, getInventoryMovements as apiGetInventoryMovements, getSuppliers as apiGetSuppliers, createSupplier as apiCreateSupplier, getCategoryReport, getCashierReport, getProfitReport, getReturnProfitImpact, getPaymentReport, getBranches as apiGetBranches, getStockTransfers as apiGetStockTransfers, createStockTransfer as apiCreateStockTransfer, receiveStockTransfer as apiReceiveStockTransfer } from "./api";
 import { downloadBackup, restoreBackup } from "./backup";
 import { downloadProductsCsv, parseProductsCsv } from "./importExport";
 import { printBarcodeLabel, printBarcodeBatch, generateBarcode } from "./barcode";
@@ -17,6 +17,8 @@ import { downloadProductsExcel, parseProductsExcel, exportInventoryExcel, export
 import { cacheProducts, queueOfflineSale, startOfflineSync, getOfflineSyncConflicts, retryOfflineSyncConflict, resolveOfflineSyncConflict } from "./offlineDb";
 import { isOnline } from "./sync";
 import { printHtml, getPrinters, savePrinterName, handleScannerInput, getScannerSettings, saveScannerSettings, scannerBeep } from "./hardware";
+
+function printInvoice(sale: Sale, products: Product[]){const names=Object.fromEntries(products.map(p=>[p.variantId||p.id,p.name+" "+(p.size||"")+" "+(p.color||"")]));void printHtml(invoiceHtml(sale,settingsStorage.get(),names),settingsStorage.get().paper).catch(e=>alert(e instanceof Error?e.message:"Printer failed."));}
 import { getProducts as apiGetProducts, createProduct as apiCreateProduct, updateProduct as apiUpdateProduct, createSale as apiCreateSale, createPurchase as apiCreatePurchase, createReturn as apiCreateReturn, createVariant as apiCreateVariant, updateVariant as apiUpdateVariant, adjustInventory as apiAdjustInventory, getSales as apiGetSales, getReportSummary as apiGetReportSummary, getDashboardSummary as apiGetDashboardSummary, getCustomers as apiGetCustomers, createCustomer as apiCreateCustomer, recordCustomerPayment as apiRecordCustomerPayment, getCustomerTransactions as apiGetCustomerTransactions, getSalesReport as apiGetSalesReport, getProductReport as apiGetProductReport, getReturns as apiGetReturns, getPurchaseReport as apiGetPurchaseReport, getKhataReport as apiGetKhataReport, getDashboardRecent, getDashboardTopProducts, getAdminUsers as apiGetAdminUsers, createAdminUser as apiCreateAdminUser, setAdminUserStatus as apiSetAdminUserStatus, setAdminUserPassword as apiSetAdminUserPassword, getAdminRoles as apiGetAdminRoles, getAdminPermissions as apiGetAdminPermissions, createAdminRole as apiCreateAdminRole, updateAdminRolePermissions as apiUpdateAdminRolePermissions, getAuditLogs as apiGetAuditLogs, getAuthSessions as apiGetAuthSessions, logoutAll as apiLogoutAll } from "./api";
 
 const nav=["Dashboard","Sales / POS","Products","Inventory","Purchases","Customers / Khata","Returns / Exchange","Sales History","Reports","Offline Sync","How to Use","Users & Roles","Transfers","Settings"];
@@ -29,13 +31,13 @@ export default function App(){
  return <div className="app"><aside><div className="brand"><strong>▣ StockDone</strong><small>Simple. Fast. In Control.</small></div><nav>{nav.filter(x=>canOpen(session.role,x)).map(x=><button className={active===x?"active":""} onClick={()=>setActive(x)} key={x}>{x}</button>)}</nav></aside><main><header><div><h1>{active}</h1><p>Garments POS & Inventory Management</p></div><span className="status">{session.name} • {session.role} <button onClick={()=>{authStorage.clearSession();setSession(null)}}>Logout</button></span></header>
  {active==="Dashboard"?<Dashboard products={products} sales={sales}/>:
  active==="Products"?<Products products={products} setProducts={saveProducts}/>:
- active==="Inventory"?<Inventory products={products} movements={movements} setProducts={saveProducts} setMovements={saveMovements}/>:
+ active==="Inventory"?<Inventory products={products} setProducts={saveProducts}/>:
  active==="Transfers"?<Transfers products={products}/>:
  active==="Sales / POS"?<POS customers={customers} products={products} cart={cart} setCart={setCart} setProducts={saveProducts} sales={sales} setSales={saveSales} movements={movements} setMovements={saveMovements}/>:
  active==="Purchases"?<Purchases suppliers={suppliers} purchases={purchases} products={products} setSuppliers={saveSuppliers} setPurchases={savePurchases} setProducts={saveProducts} movements={movements} setMovements={saveMovements}/>:
  active==="Customers / Khata"?<Customers customers={customers} transactions={customerTx} setCustomers={saveCustomers} setTransactions={saveCustomerTx}/>:
  active==="Returns / Exchange"?<Returns products={products} sales={sales} returns={returns} movements={movements} setProducts={saveProducts} setReturns={saveReturns} setMovements={saveMovements}/>:
- active==="Sales History"?<SalesHistory sales={sales} products={products}/>:
+ active==="Sales History"?<SalesHistory products={products}/>:
  active==="Reports"?<Reports/>:
  active==="Offline Sync"?<OfflineSyncPanel/>:
  active==="How to Use"?<HowToUse/>:
