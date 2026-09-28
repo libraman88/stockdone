@@ -119,3 +119,7 @@ SELECT r.id,p.id
 FROM roles r JOIN permissions p ON p.code IN ('sales','customers','print')
 WHERE r.name='cashier'
 ON CONFLICT DO NOTHING;
+
+
+-- Allow custom role names and per-role permission management.
+ALTER TABLE roles DROP CONSTRAINT IF EXISTS roles_name_check;
