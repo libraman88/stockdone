@@ -70,6 +70,12 @@ export function getProductReport(from:string,to:string){return apiRequest<Produc
 export function getPurchaseReport(from:string,to:string){return apiRequest<any[]>(`/reports/purchases?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
 export function getKhataReport(){return apiRequest<any[]>("/reports/khata");}
 
+export type AdminRole={id:string;name:string;permissions:string[]};
+export type AdminPermission={code:string;description:string};
+export function getAdminRoles(){return apiRequest<AdminRole[]>("/admin/roles");}
+export function getAdminPermissions(){return apiRequest<AdminPermission[]>("/admin/permissions");}
+export function createAdminRole(input:{name:string;permissionCodes:string[]}){return apiRequest<AdminRole>("/admin/roles",{method:"POST",body:JSON.stringify(input)});}
+export function updateAdminRolePermissions(id:string,permissionCodes:string[]){return apiRequest<{ok:boolean}>(`/admin/roles/${id}/permissions`,{method:"PUT",body:JSON.stringify({permissionCodes})});}
 export type AdminUser={id:string;username:string;name:string;role:"owner"|"manager"|"cashier";active:boolean;created_at:string};
 export function getAdminUsers(){return apiRequest<AdminUser[]>("/admin/users");}
 export function createAdminUser(input:{username:string;name:string;role:"manager"|"cashier";password:string}){return apiRequest<AdminUser>("/admin/users",{method:"POST",body:JSON.stringify(input)});}
