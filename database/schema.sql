@@ -20,3 +20,7 @@ CREATE INDEX IF NOT EXISTS idx_variants_barcode ON product_variants(barcode);
 CREATE TABLE IF NOT EXISTS customers (id UUID PRIMARY KEY,business_id UUID NOT NULL REFERENCES businesses(id),name TEXT NOT NULL,phone TEXT,address TEXT,balance NUMERIC(12,2) NOT NULL DEFAULT 0,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS customer_transactions (id UUID PRIMARY KEY,customer_id UUID NOT NULL REFERENCES customers(id),type TEXT NOT NULL CHECK(type IN ('credit_sale','payment','debit_adjustment','credit_adjustment')),amount NUMERIC(12,2) NOT NULL,reference_id UUID,note TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
 CREATE INDEX IF NOT EXISTS idx_customer_transactions_customer_date ON customer_transactions(customer_id,created_at DESC);
+
+CREATE TABLE IF NOT EXISTS returns (id UUID PRIMARY KEY,business_id UUID NOT NULL REFERENCES businesses(id),branch_id UUID NOT NULL REFERENCES branches(id),sale_id UUID NOT NULL REFERENCES sales(id),type TEXT NOT NULL CHECK(type IN ('return','exchange')),refund_amount NUMERIC(12,2) NOT NULL DEFAULT 0,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS return_items (id UUID PRIMARY KEY,return_id UUID NOT NULL REFERENCES returns(id),variant_id UUID NOT NULL REFERENCES product_variants(id),quantity INTEGER NOT NULL,unit_price NUMERIC(12,2) NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_returns_sale ON returns(sale_id,created_at DESC);
