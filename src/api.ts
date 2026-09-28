@@ -57,3 +57,4 @@ export function recordCustomerPayment(id:string,amount:number,note?:string){retu
 
 export type ApiReturnItem={variantId:string;quantity:number;unitPrice:number};
 export function createReturn(input:{saleId:string;type:"return"|"exchange";refundAmount:number;items:ApiReturnItem[]}){return apiRequest<{id:string;type:string;refundAmount:number}>("/returns",{method:"POST",body:JSON.stringify(input)});}
+export function getSales(){return apiRequest<any[]>("/sales");}
