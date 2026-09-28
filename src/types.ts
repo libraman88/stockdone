@@ -26,7 +26,7 @@ export type StockMovement = {
 export type Sale = {
   id: string;
   invoiceNo: string;
-  items: Array<{ productId: string; qty: number; price: number }>;
+  items: Array<{ productId: string; variantId?: string; qty: number; price: number }>;
   total: number;
   paymentMethod: "cash" | "card" | "bank" | "other";
   discount?: number;
@@ -50,4 +50,5 @@ export type InvoiceSettings = {
   address: string;
   footer: string;
   paper: "A4" | "80mm";
+  printerName?: string;
 };
