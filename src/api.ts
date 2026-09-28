@@ -84,6 +84,10 @@ export type PaymentReport={method:string;invoices:number;total:number};
 export type ProductReport={name:string;sku:string;size:string|null;color:string|null;units:number;sales:number;cost:number;gross_profit:number};
 export function getSalesReport(from:string,to:string){return apiRequest<{daily:DailySalesReport[];payments:PaymentReport[]}>(`/reports/sales?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
 export function getProductReport(from:string,to:string){return apiRequest<ProductReport[]>(`/reports/products?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
+export type CategoryReport={category:string;units:number;sales:number;cost:number;gross_profit:number};
+export type CashierReport={cashier:string;invoices:number;sales:number;discounts:number};
+export function getCategoryReport(from:string,to:string){return apiRequest<CategoryReport[]>(`/reports/categories?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
+export function getCashierReport(from:string,to:string){return apiRequest<CashierReport[]>(`/reports/cashiers?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
 export function getPurchaseReport(from:string,to:string){return apiRequest<any[]>(`/reports/purchases?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
 export function getKhataReport(){return apiRequest<any[]>("/reports/khata");}
 
