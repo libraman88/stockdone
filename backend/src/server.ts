@@ -38,5 +38,17 @@ app.post("/api/customers/:id/payment",async(req,res)=>{const amount=Number(req.b
 \n
 const returnSchema=z.object({saleId:z.string().uuid(),type:z.enum(["return","exchange"]),refundAmount:z.number().nonnegative().default(0),items:z.array(z.object({variantId:z.string().uuid(),quantity:z.number().int().positive(),unitPrice:z.number().nonnegative()})).min(1)});
 app.post("/api/returns",async(req,res)=>{const p=returnSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:"Invalid return data"});const x=p.data,client=await pool.connect();try{await client.query("BEGIN");const r=await client.query("SELECT id FROM sales WHERE id=$1 FOR UPDATE",[x.saleId]);if(!r.rowCount)throw new Error("SALE_NOT_FOUND");const id=crypto.randomUUID();await client.query("INSERT INTO returns(id,business_id,branch_id,sale_id,type,refund_amount) VALUES($1,$2,$3,$4,$5,$6)",[id,process.env.DEFAULT_BUSINESS_ID,process.env.DEFAULT_BRANCH_ID,x.saleId,x.type,x.refundAmount]);for(const i of x.items){await client.query("INSERT INTO return_items(id,return_id,variant_id,quantity,unit_price) VALUES($1,$2,$3,$4,$5)",[crypto.randomUUID(),id,i.variantId,i.quantity,i.unitPrice]);await client.query("UPDATE inventory SET quantity=quantity+$1 WHERE variant_id=$2",[i.quantity,i.variantId]);await client.query("INSERT INTO stock_movements(id,branch_id,variant_id,type,quantity,reference_id) VALUES($1,$2,$3,'sale_return',$4,$5)",[crypto.randomUUID(),process.env.DEFAULT_BRANCH_ID,i.variantId,i.quantity,id])}await client.query("COMMIT");res.status(201).json({id,type:x.type,refundAmount:x.refundAmount})}catch(e){await client.query("ROLLBACK");res.status(e instanceof Error&&e.message==="SALE_NOT_FOUND"?404:500).json({error:e instanceof Error?e.message:"Return failed"})}finally{client.release()}});
-\nconst port=Number(process.env.PORT||4000);
+\n
+app.get("/api/reports/summary",async(req,res)=>{
+  const from=String(req.query.from||"1970-01-01"),to=String(req.query.to||"2999-12-31");
+  try{
+    const sales=await pool.query("SELECT COUNT(*)::int AS invoices,COALESCE(SUM(total),0)::numeric AS sales_total,COALESCE(SUM(discount),0)::numeric AS discounts FROM sales WHERE business_id=$1 AND created_at >= $2::timestamptz AND created_at < ($3::date + INTERVAL '1 day')",[process.env.DEFAULT_BUSINESS_ID,from,to]);
+    const profit=await pool.query("SELECT COALESCE(SUM(si.quantity*(si.unit_price-pv.cost)),0)::numeric AS gross_profit FROM sales s JOIN sale_items si ON si.sale_id=s.id JOIN product_variants pv ON pv.id=si.variant_id WHERE s.business_id=$1 AND s.created_at >= $2::timestamptz AND s.created_at < ($3::date + INTERVAL '1 day')",[process.env.DEFAULT_BUSINESS_ID,from,to]);
+    const inventory=await pool.query("SELECT COUNT(*)::int AS variants,COALESCE(SUM(i.quantity),0)::int AS units,COALESCE(SUM(i.quantity*pv.cost),0)::numeric AS cost_value,COALESCE(SUM(i.quantity*pv.price),0)::numeric AS retail_value FROM inventory i JOIN product_variants pv ON pv.id=i.variant_id JOIN branches b ON b.id=i.branch_id WHERE b.business_id=$1",[process.env.DEFAULT_BUSINESS_ID]);
+    const low=await pool.query("SELECT p.name,p.sku,v.size,v.color,i.quantity,i.reorder_level FROM inventory i JOIN product_variants v ON v.id=i.variant_id JOIN products p ON p.id=v.product_id JOIN branches b ON b.id=i.branch_id WHERE b.business_id=$1 AND i.quantity<=i.reorder_level ORDER BY i.quantity ASC",[process.env.DEFAULT_BUSINESS_ID]);
+    res.json({sales:sales.rows[0],profit:profit.rows[0],inventory:inventory.rows[0],lowStock:low.rows});
+  }catch{res.status(500).json({error:"Unable to generate report"})}
+});
+
+const port=Number(process.env.PORT||4000);
 app.listen(port,()=>console.log(`StockDone API listening on :${port}`));
