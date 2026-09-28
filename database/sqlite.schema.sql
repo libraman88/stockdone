@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS products (
 CREATE TABLE IF NOT EXISTS sales (
   id TEXT PRIMARY KEY,
   invoice_no TEXT NOT NULL UNIQUE,
+  client_reference TEXT UNIQUE,
   total REAL NOT NULL,
   payment_method TEXT NOT NULL,
   discount REAL NOT NULL DEFAULT 0,
