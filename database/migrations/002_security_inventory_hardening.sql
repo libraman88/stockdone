@@ -86,3 +86,9 @@ INSERT INTO permissions(id,code,description) VALUES
 (gen_random_uuid(),'settings','Manage system settings'),
 (gen_random_uuid(),'admin','Administrative actions')
 ON CONFLICT(code) DO NOTHING;
+
+
+-- Return/exchange hardening
+ALTER TABLE returns ADD COLUMN IF NOT EXISTS price_difference NUMERIC(12,2) NOT NULL DEFAULT 0;
+ALTER TABLE return_items ADD COLUMN IF NOT EXISTS direction TEXT NOT NULL DEFAULT 'in' CHECK(direction IN ('in','out'));
+CREATE INDEX IF NOT EXISTS idx_return_items_return_direction ON return_items(return_id,direction);
