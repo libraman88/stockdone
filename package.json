@@ -11,7 +11,7 @@
     "electron": "electron .",
     "electron:dev": "concurrently \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
     "typecheck": "tsc --noEmit",
-    "desktop:win": "npm run build && electron-builder install-app-deps && electron-builder --win nsis --x64"
+    "desktop:win": "npm run build && electron-builder --win nsis --x64"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
@@ -22,7 +22,7 @@
     "electron": "latest",
     "jsbarcode": "^3.11.6",
     "xlsx": "^0.18.5",
-    "better-sqlite3": "^11.10.0"
+    "better-sqlite3": "^13.0.3"
   },
   "devDependencies": {
     "concurrently": "latest",
