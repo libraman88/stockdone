@@ -64,5 +64,9 @@ app.post("/api/auth/login",async(req,res)=>{const p=loginSchema.safeParse(req.bo
 function authenticate(req:any,res:any,next:any){const raw=String(req.headers.authorization||"");if(!raw.startsWith("Bearer "))return res.status(401).json({error:"Authentication required"});try{req.user=jwt.verify(raw.slice(7),JWT_SECRET);next()}catch{return res.status(401).json({error:"Invalid or expired session"})}}
 app.get("/api/auth/me",authenticate,(req:any,res)=>res.json({user:req.user}));
 
+
+async function audit(req:any,action:string,entity?:string,entityId?:string,details?:unknown){try{await pool.query("INSERT INTO audit_logs(id,business_id,user_id,action,entity,entity_id,details,ip_address) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",[crypto.randomUUID(),process.env.DEFAULT_BUSINESS_ID,req.user?.sub||null,action,entity||null,entityId||null,details?JSON.stringify(details):null,req.ip||null])}catch{}}
+app.get("/api/audit-logs",authenticate,requirePermission("reports"),async(req:any,res)=>{try{const r=await pool.query("SELECT id,user_id,action,entity,entity_id,details,created_at FROM audit_logs WHERE business_id=$1 ORDER BY created_at DESC LIMIT 200",[process.env.DEFAULT_BUSINESS_ID]);res.json(r.rows)}catch{res.status(500).json({error:"Unable to load audit logs"})}});
+
 const port=Number(process.env.PORT||4000);
 app.listen(port,()=>console.log(`StockDone API listening on :${port}`));
