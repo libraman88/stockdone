@@ -1,3 +1,4 @@
+import type { User as ExpressUser } from "express";
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
@@ -7,6 +8,15 @@ import jwt from "jsonwebtoken";
 import crypto from "node:crypto";
 import nodemailer from "nodemailer";
 import { z } from "zod";
+
+declare global {
+  namespace Express {
+    interface Request {
+      user?: { id: string; username: string; role: string; businessId: string; branchId: string; session: string };
+    }
+  }
+}
+
 
 const app=express();
 app.use(cors());
