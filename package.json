@@ -19,12 +19,12 @@
     "typescript": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "electron": "latest",
     "jsbarcode": "^3.11.6",
     "xlsx": "^0.18.5",
     "better-sqlite3": "^13.0.3"
   },
   "devDependencies": {
+    "electron": "latest",
     "concurrently": "latest",
     "cross-env": "latest",
     "wait-on": "latest",
