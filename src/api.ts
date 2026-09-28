@@ -26,6 +26,10 @@ export function getAuthSessions(){return apiRequest<AuthSession[]>("/auth/sessio
 export function logout(){return apiRequest<{ok:boolean}>("/auth/logout",{method:"POST"}).finally(()=>setApiToken(null));}
 export function logoutAll(){return apiRequest<{ok:boolean}>("/auth/logout-all",{method:"POST"}).finally(()=>setApiToken(null));}
 
+export function setupOwner(input:{businessName:string;branchName:string;branchCode:string;ownerName:string;username:string;password:string}) {
+  return apiRequest<{token:string;user:{id:string;username:string;name:string;role:string}}>("/auth/setup",{method:"POST",body:JSON.stringify(input)});
+}
+
 export function login(username: string, password: string) {
   return apiRequest<{token:string;user:{id:string;username:string;name:string;role:string}}>("/auth/login", {
     method: "POST", body: JSON.stringify({username,password})
