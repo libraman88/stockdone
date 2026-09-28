@@ -54,3 +54,6 @@ export type ApiCustomer = { id:string; name:string; phone?:string|null; address?
 export function getCustomers(){return apiRequest<ApiCustomer[]>("/customers");}
 export function createCustomer(input:{name:string;phone?:string;address?:string}){return apiRequest<ApiCustomer>("/customers",{method:"POST",body:JSON.stringify(input)});}
 export function recordCustomerPayment(id:string,amount:number,note?:string){return apiRequest<{customerId:string;balance:number}>(`/customers/${id}/payment`,{method:"POST",body:JSON.stringify({amount,note})});}
+
+export type ApiReturnItem={variantId:string;quantity:number;unitPrice:number};
+export function createReturn(input:{saleId:string;type:"return"|"exchange";refundAmount:number;items:ApiReturnItem[]}){return apiRequest<{id:string;type:string;refundAmount:number}>("/returns",{method:"POST",body:JSON.stringify(input)});}
