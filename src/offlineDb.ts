@@ -23,7 +23,7 @@ export async function queueOfflineSale(sale:{id:string;invoiceNo:string;total:nu
   await offlineDb.exec("BEGIN");
   try {
     for(const item of sale.items){const rows=await offlineDb.query<{qty:number}>("SELECT qty FROM products WHERE id=?",[item.productId]);if(!rows[0]||Number(rows[0].qty)<item.qty)throw new Error("Insufficient offline stock.");}
-    await offlineDb.exec("INSERT INTO sales(id,invoice_no,total,payment_method,discount,customer_id,status,created_at) VALUES(?,?,?,?,?,?,?,?)",[sale.id,sale.invoiceNo,sale.total,sale.paymentMethod,sale.discount,sale.customerId??null,"completed",now]);
+    await offlineDb.exec("INSERT INTO sales(id,invoice_no,client_reference,total,payment_method,discount,customer_id,status,created_at) VALUES(?,?,?,?,?,?,?,?,?)",[sale.id,sale.invoiceNo,sale.id,sale.total,sale.paymentMethod,sale.discount,sale.customerId??null,"completed",now]);
     for(const item of sale.items){
       await offlineDb.exec("INSERT INTO sale_items(id,sale_id,product_id,qty,price,unit_cost) VALUES(?,?,?,?,?,?)",[item.id,sale.id,item.productId,item.qty,item.price,item.unitCost]);
       await offlineDb.exec("UPDATE products SET qty=qty-?,updated_at=? WHERE id=?",[item.qty,now,item.productId]);
