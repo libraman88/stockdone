@@ -30,6 +30,13 @@ app.delete("/api/products/:id",async(req,res)=>{res.status(405).json({error:"Pro
 
 
 const saleSchema=z.object({invoiceNo:z.string().min(1),paymentMethod:z.enum(["cash","card","bank","other"]),discount:z.number().nonnegative().default(0),customerId:z.string().uuid().nullable().optional(),items:z.array(z.object({variantId:z.string().uuid(),qty:z.number().int().positive(),price:z.number().nonnegative()})).min(1)});
+app.use("/api/products", authenticate);
+app.use("/api/sales", authenticate);
+app.use("/api/purchases", authenticate);
+app.use("/api/customers", authenticate);
+app.use("/api/returns", authenticate);
+app.use("/api/reports", authenticate);
+
 app.post("/api/sales",async(req,res)=>{const parsed=saleSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:"Invalid sale data"});const s=parsed.data;const client=await pool.connect();try{await client.query("BEGIN");let subtotal=0;for(const i of s.items){const r=await client.query("SELECT quantity FROM inventory WHERE variant_id=$1 FOR UPDATE",[i.variantId]);if(!r.rowCount||r.rows[0].quantity<i.qty)throw new Error("INSUFFICIENT_STOCK");subtotal+=i.qty*i.price}const total=Math.max(0,subtotal-s.discount);const saleId=crypto.randomUUID();await client.query("INSERT INTO sales(id,business_id,branch_id,invoice_no,customer_id,subtotal,discount,total,payment_method) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)",[saleId,process.env.DEFAULT_BUSINESS_ID,process.env.DEFAULT_BRANCH_ID,s.invoiceNo,s.customerId||null,subtotal,s.discount,total,s.paymentMethod]);for(const i of s.items){await client.query("INSERT INTO sale_items(id,sale_id,variant_id,quantity,unit_price) VALUES($1,$2,$3,$4,$5)",[crypto.randomUUID(),saleId,i.variantId,i.qty,i.price]);await client.query("UPDATE inventory SET quantity=quantity-$1 WHERE variant_id=$2",[i.qty,i.variantId]);await client.query("INSERT INTO stock_movements(id,branch_id,variant_id,type,quantity,reference_id) VALUES($1,$2,$3,'sale',$4,$5)",[crypto.randomUUID(),process.env.DEFAULT_BRANCH_ID,i.variantId,-i.qty,saleId])}await client.query("COMMIT");res.status(201).json({id:saleId,invoiceNo:s.invoiceNo,total})}catch(e){await client.query("ROLLBACK");res.status(e instanceof Error&&e.message==="INSUFFICIENT_STOCK"?409:500).json({error:e instanceof Error?e.message:"Sale failed"})}finally{client.release()}});
 
 
@@ -60,6 +67,8 @@ app.get("/api/reports/summary",async(req,res)=>{
 
 
 const rolePermissions:Record<string,string[]>={owner:["*"],manager:["sales","products","inventory","purchases","customers","returns","reports"],cashier:["sales","customers","print"]};
+
+function requireAuthPermission(permission:string){return [authenticate,requirePermission(permission)]}
 function requirePermission(permission:string){return (req:any,res:any,next:any)=>{const role=String(req.user?.role||"");const allowed=rolePermissions[role]||[];if(!allowed.includes("*")&&!allowed.includes(permission))return res.status(403).json({error:"Permission denied"});next()}}
 app.use("/api/admin",requirePermission("admin"),(_req,res)=>res.status(501).json({error:"Admin API not implemented"}));
 
