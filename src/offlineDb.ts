@@ -67,3 +67,19 @@ export function startOfflineSync(onSynced?: (count:number)=>void) {
   const timer=window.setInterval(run,30000);
   return()=>{window.removeEventListener("online",run);window.clearInterval(timer)};
 }
+
+export async function getOfflineSyncConflicts(){
+  if(!(await offlineDb.available()))return [];
+  return offlineDb.query<{id:string;entity:string;entity_id:string;local_payload:string;server_payload:string;detected_at:string;resolution:string}>("SELECT * FROM sync_conflicts WHERE resolution='pending' ORDER BY detected_at DESC");
+}
+export async function retryOfflineSyncConflict(conflictId:string){
+  if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
+  await offlineDb.exec("UPDATE sync_queue SET status='pending',last_error=NULL WHERE entity_id=(SELECT entity_id FROM sync_conflicts WHERE id=?) AND entity='sale'",[conflictId]);
+  await offlineDb.exec("UPDATE sync_conflicts SET resolution='retrying' WHERE id=?",[conflictId]);
+  return syncPendingSales();
+}
+export async function resolveOfflineSyncConflict(conflictId:string){
+  if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
+  await offlineDb.exec("UPDATE sync_conflicts SET resolution='resolved' WHERE id=?",[conflictId]);
+  await offlineDb.exec("UPDATE sync_queue SET status='failed' WHERE entity_id=(SELECT entity_id FROM sync_conflicts WHERE id=?) AND entity='sale'",[conflictId]);
+}
