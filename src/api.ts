@@ -80,6 +80,10 @@ export type DashboardSummary=ReportSummary;
 export function getDashboardSummary(from:string,to:string){return getReportSummary(from,to);}
 
 export type DailySalesReport={date:string;invoices:number;total:number;discounts:number};
+export type RecentSale={id:string;invoice_no:string;total:number;payment_method:string;created_at:string;customer:string};
+export type TopProduct={name:string;sku:string;units:number;sales:number};
+export function getDashboardRecent(){return apiRequest<RecentSale[]>("/dashboard/recent");}
+export function getDashboardTopProducts(){return apiRequest<TopProduct[]>("/dashboard/top-products");}
 export type PaymentReport={method:string;invoices:number;total:number};
 export type ProductReport={name:string;sku:string;size:string|null;color:string|null;units:number;sales:number;cost:number;gross_profit:number};
 export function getSalesReport(from:string,to:string){return apiRequest<{daily:DailySalesReport[];payments:PaymentReport[]}>(`/reports/sales?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
