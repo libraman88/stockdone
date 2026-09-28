@@ -1,7 +1,7 @@
 export type Role = "owner" | "manager" | "cashier";
 export type User = { id:string; username:string; name:string; role:Role; active:boolean; password:string };
 const KEY="stockdone.users";
-const DEFAULT:User[]=[{id:"owner",username:"admin",name:"Owner",role:"owner",active:true,password:"admin123"}];
+const DEFAULT:User[]=[];
 const SESSION="stockdone.session";
 export const authStorage={
  getUsers:():User[]=>{try{return JSON.parse(localStorage.getItem(KEY)||"null")||DEFAULT}catch{return DEFAULT}},
