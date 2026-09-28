@@ -121,3 +121,6 @@ export function getInventoryMovements(){return apiRequest<StockMovementRow[]>("/
 
 export type ApiReturnRecord={id:string;type:string;sale_id:string;refund_amount:number;price_difference:number;created_at:string};
 export function getReturns(){return apiRequest<ApiReturnRecord[]>("/returns");}
+
+export type CustomerTransactionRow={id:string;customer_id:string;type:string;amount:number;note:string|null;created_at:string};
+export function getCustomerTransactions(customerId:string){return apiRequest<CustomerTransactionRow[]>(`/customers/${customerId}/transactions`);}
