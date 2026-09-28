@@ -9,13 +9,15 @@ export function setApiToken(value: string | null) {
   else sessionStorage.removeItem("stockdone.apiToken");
 }
 
+export class ApiError extends Error { constructor(message: string, public readonly status: number) { super(message); this.name = "ApiError"; } }
+
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (token) headers.set("Authorization", "Bearer " + token);
   const response = await fetch(BASE_URL + path, { ...options, headers });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(typeof data?.error === "string" ? data.error : "API request failed");
+  if (!response.ok) throw new ApiError(typeof data?.error === "string" ? data.error : "API request failed", response.status);
   return data as T;
 }
 
