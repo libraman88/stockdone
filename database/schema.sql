@@ -16,3 +16,7 @@ CREATE INDEX IF NOT EXISTS idx_inventory_variant ON inventory(variant_id);
 CREATE INDEX IF NOT EXISTS idx_stock_movements_variant_date ON stock_movements(variant_id,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_products_sku ON products(business_id,sku);
 CREATE INDEX IF NOT EXISTS idx_variants_barcode ON product_variants(barcode);
+
+CREATE TABLE IF NOT EXISTS customers (id UUID PRIMARY KEY,business_id UUID NOT NULL REFERENCES businesses(id),name TEXT NOT NULL,phone TEXT,address TEXT,balance NUMERIC(12,2) NOT NULL DEFAULT 0,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS customer_transactions (id UUID PRIMARY KEY,customer_id UUID NOT NULL REFERENCES customers(id),type TEXT NOT NULL CHECK(type IN ('credit_sale','payment','debit_adjustment','credit_adjustment')),amount NUMERIC(12,2) NOT NULL,reference_id UUID,note TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS idx_customer_transactions_customer_date ON customer_transactions(customer_id,created_at DESC);
