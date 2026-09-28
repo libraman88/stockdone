@@ -60,7 +60,7 @@ app.get("/api/reports/summary",async(req,res)=>{
 
 
 const rolePermissions:Record<string,string[]>={owner:["*"],manager:["sales","products","inventory","purchases","customers","returns","reports"],cashier:["sales","customers","print"]};
-function requirePermission(permission:string){return (req:any,res:any,next:any)=>{const role=String(req.header("x-user-role")||"");const allowed=rolePermissions[role]||[];if(!allowed.includes("*")&&!allowed.includes(permission))return res.status(403).json({error:"Permission denied"});next()}}
+function requirePermission(permission:string){return (req:any,res:any,next:any)=>{const role=String(req.user?.role||"");const allowed=rolePermissions[role]||[];if(!allowed.includes("*")&&!allowed.includes(permission))return res.status(403).json({error:"Permission denied"});next()}}
 app.use("/api/admin",requirePermission("admin"),(_req,res)=>res.status(501).json({error:"Admin API not implemented"}));
 
 
