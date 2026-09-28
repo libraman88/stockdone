@@ -1,5 +1,6 @@
 export type Product = {
   id: string;
+  variantId?: string;
   name: string;
   sku: string;
   category: string;
