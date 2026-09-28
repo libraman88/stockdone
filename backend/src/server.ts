@@ -222,6 +222,7 @@ app.post("/api/auth/login",async(req,res)=>{
  }catch{res.status(500).json({error:"Login failed"})}
 });
 app.get("/api/auth/me",authenticate,(req:any,res)=>res.json({user:req.user}));
+app.get("/api/auth/sessions",authenticate,async(req:any,res)=>{try{const r=await pool.query("SELECT id,created_at,expires_at,revoked_at FROM auth_sessions WHERE user_id=$1 ORDER BY created_at DESC",[req.user.sub]);res.json(r.rows)}catch{res.status(500).json({error:"Unable to load sessions"})}});
 app.post("/api/auth/logout",authenticate,async(req:any,res)=>{try{if(req.user?.session)await pool.query("UPDATE auth_sessions SET revoked_at=now() WHERE token_hash=$1",[req.user.session]);res.json({ok:true})}catch{res.status(500).json({error:"Logout failed"})}});
 app.post("/api/auth/logout-all",authenticate,async(req:any,res)=>{try{await pool.query("UPDATE auth_sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL",[req.user.sub]);res.json({ok:true})}catch{res.status(500).json({error:"Logout all failed"})}});
 
