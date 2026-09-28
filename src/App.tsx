@@ -12,7 +12,7 @@ import { canOpen } from "./permissions";
 import { login as apiLogin, setupOwner as apiSetupOwner, setApiToken, requestPasswordReset, confirmPasswordReset } from "./api";
 import { downloadBackup, restoreBackup } from "./backup";
 import { downloadProductsCsv, parseProductsCsv } from "./importExport";
-import { printBarcodeLabel } from "./barcode";
+import { printBarcodeLabel, printBarcodeBatch } from "./barcode";
 import { downloadProductsExcel } from "./excel";
 import { cacheProducts, queueOfflineSale, startOfflineSync, getOfflineSyncConflicts, retryOfflineSyncConflict, resolveOfflineSyncConflict } from "./offlineDb";
 import { isOnline } from "./sync";
