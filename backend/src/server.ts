@@ -84,7 +84,7 @@ app.post("/api/returns",authenticate,requirePermission("returns"),async(req,res)
   if(!p.success)return res.status(400).json({error:"Invalid return data"});
   const x=p.data,client=await pool.connect();
   try{
-    await client.query("BEGIN");const dup=await client.query("SELECT 1 FROM returns WHERE sale_id=$1 AND id IN (SELECT return_id FROM return_items) AND false",[x.saleId]);void dup;
+    await client.query("BEGIN");
     const sale=await client.query("SELECT id,branch_id,status FROM sales WHERE id=$1 AND business_id=$2 FOR UPDATE",[x.saleId,process.env.DEFAULT_BUSINESS_ID]);
     if(!sale.rowCount)throw new Error("SALE_NOT_FOUND");if(sale.rows[0].status==="void")throw new Error("SALE_VOID");
     const branchId=sale.rows[0].branch_id;
