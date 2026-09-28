@@ -197,7 +197,24 @@ app.patch("/api/admin/users/:id/status",authenticate,requirePermission("users"),
 app.patch("/api/admin/users/:id/password",authenticate,requirePermission("users"),async(req,res)=>{const p=z.object({password:z.string().min(8).max(200)}).safeParse(req.body);if(!p.success)return res.status(400).json({error:"Password must be at least 8 characters"});try{const hash=await bcrypt.hash(p.data.password,12);const r=await pool.query("UPDATE users SET password_hash=$1 WHERE id=$2 AND business_id=$3 RETURNING id",[hash,req.params.id,process.env.DEFAULT_BUSINESS_ID]);if(!r.rowCount)return res.status(404).json({error:"User not found"});await audit(req,"user.password","user",req.params.id);res.json({ok:true})}catch{res.status(500).json({error:"Unable to change password"})}});
 
 const loginSchema=z.object({username:z.string().min(1),password:z.string().min(1)});
-app.post("/api/auth/login",async(req,res)=>{const p=loginSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:"Invalid credentials"});try{const r=await pool.query("SELECT id,username,name,role,password_hash,active FROM users WHERE business_id=$1 AND username=$2 LIMIT 1",[process.env.DEFAULT_BUSINESS_ID,p.data.username]);if(!r.rowCount||!r.rows[0].active||!(await bcrypt.compare(p.data.password,r.rows[0].password_hash)))return res.status(401).json({error:"Invalid username or password"});const u=r.rows[0],token=jwt.sign({sub:u.id,role:u.role,username:u.username},JWT_SECRET,{expiresIn:"8h"});res.json({token,user:{id:u.id,username:u.username,name:u.name,role:u.role}})}catch{res.status(500).json({error:"Login failed"})}});
+const loginAttempts=new Map<string,{count:number;resetAt:number}>();
+app.post("/api/auth/login",async(req,res)=>{
+ const p=loginSchema.safeParse(req.body); if(!p.success)return res.status(400).json({error:"Invalid credentials"});
+ const key=req.ip+":"+p.data.username.toLowerCase(),now=Date.now(),entry=loginAttempts.get(key);
+ if(entry&&entry.resetAt<=now)loginAttempts.delete(key);
+ const current=loginAttempts.get(key);
+ if(current&&current.count>=5)return res.status(429).json({error:"Too many login attempts. Try again later."});
+ try{
+  const r=await pool.query("SELECT id,username,name,role,password_hash,active FROM users WHERE business_id=$1 AND username=$2 LIMIT 1",[process.env.DEFAULT_BUSINESS_ID,p.data.username]);
+  if(!r.rowCount||!r.rows[0].active||!(await bcrypt.compare(p.data.password,r.rows[0].password_hash))){
+   const x=loginAttempts.get(key)||{count:0,resetAt:now+15*60*1000};x.count++;loginAttempts.set(key,x);return res.status(401).json({error:"Invalid username or password"});
+  }
+  loginAttempts.delete(key);
+  const u=r.rows[0],token=jwt.sign({sub:u.id,role:u.role,username:u.username},JWT_SECRET,{expiresIn:"8h"});
+  await audit({user:{sub:u.id},ip:req.ip},"auth.login","user",u.id);
+  res.json({token,user:{id:u.id,username:u.username,name:u.name,role:u.role}});
+ }catch{res.status(500).json({error:"Login failed"})}
+});
 app.get("/api/auth/me",authenticate,(req:any,res)=>res.json({user:req.user}));
 
 
