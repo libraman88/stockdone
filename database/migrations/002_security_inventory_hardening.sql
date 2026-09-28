@@ -92,3 +92,30 @@ ON CONFLICT(code) DO NOTHING;
 ALTER TABLE returns ADD COLUMN IF NOT EXISTS price_difference NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE return_items ADD COLUMN IF NOT EXISTS direction TEXT NOT NULL DEFAULT 'in' CHECK(direction IN ('in','out'));
 CREATE INDEX IF NOT EXISTS idx_return_items_return_direction ON return_items(return_id,direction);
+
+
+-- Seed DB-backed default roles and role permissions
+INSERT INTO roles(id,business_id,name)
+VALUES
+(gen_random_uuid(),(SELECT id FROM businesses LIMIT 1),'owner'),
+(gen_random_uuid(),(SELECT id FROM businesses LIMIT 1),'manager'),
+(gen_random_uuid(),(SELECT id FROM businesses LIMIT 1),'cashier')
+ON CONFLICT (business_id,name) DO NOTHING;
+
+INSERT INTO role_permissions(role_id,permission_id)
+SELECT r.id,p.id
+FROM roles r CROSS JOIN permissions p
+WHERE r.name='owner'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO role_permissions(role_id,permission_id)
+SELECT r.id,p.id
+FROM roles r JOIN permissions p ON p.code IN ('sales','products','inventory','purchases','customers','returns','reports')
+WHERE r.name='manager'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO role_permissions(role_id,permission_id)
+SELECT r.id,p.id
+FROM roles r JOIN permissions p ON p.code IN ('sales','customers','print')
+WHERE r.name='cashier'
+ON CONFLICT DO NOTHING;
