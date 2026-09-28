@@ -72,3 +72,5 @@ export type Branch={id:string;name:string;code:string};
 export function getBranches(){return apiRequest<Branch[]>("/branches");}
 export function createBranch(input:{name:string;code:string}){return apiRequest<Branch>("/branches",{method:"POST",body:JSON.stringify(input)});}
 export function receiveStockTransfer(id:string){return apiRequest<{id:string;status:string}>(`/inventory/transfers/${id}/receive`,{method:"POST"});}
+
+export function getStockTransfers(){return apiRequest<any[]>("/inventory/transfers");}
