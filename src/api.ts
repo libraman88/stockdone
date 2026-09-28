@@ -115,7 +115,9 @@ export function createAdminUser(input:{username:string;name:string;role:"manager
 export function setAdminUserStatus(id:string,active:boolean){return apiRequest<AdminUser>(`/admin/users/${id}/status`,{method:"PATCH",body:JSON.stringify({active})});}
 export function setAdminUserPassword(id:string,password:string){return apiRequest<{ok:boolean}>(`/admin/users/${id}/password`,{method:"PATCH",body:JSON.stringify({password})});}
 
-export function updateVariant(productId:string, variantId:string, input: {size?:string|null;color?:string|null;barcode?:string|null;cost?:number;price?:number;qty?:number;reorderLevel?:number}) { return apiRequest<{ok:boolean;variantId:string}>(`/products/${productId}/variants/${variantId}`, {method:"PUT",body:JSON.stringify(input)}); }\n\nexport function createVariant(productId:string,input:{size?:string;color?:string;barcode?:string;cost:number;price:number;qty:number;reorderLevel:number}){return apiRequest<{variantId:string}>(`/products/${productId}/variants`,{method:"POST",body:JSON.stringify(input)});}
+export function updateVariant(productId:string, variantId:string, input: {size?:string|null;color?:string|null;barcode?:string|null;cost?:number;price?:number;qty?:number;reorderLevel?:number}) { return apiRequest<{ok:boolean;variantId:string}>(`/products/${productId}/variants/${variantId}`, {method:"PUT",body:JSON.stringify(input)}); }
+
+export function createVariant(productId:string,input:{size?:string;color?:string;barcode?:string;cost:number;price:number;qty:number;reorderLevel:number}){return apiRequest<{variantId:string}>(`/products/${productId}/variants`,{method:"POST",body:JSON.stringify(input)});}
 
 export function adjustInventory(input:{variantId:string;quantityDelta:number;reason:"Damaged"|"Missing"|"Physical Count"|"Correction"|"Other";note?:string}){return apiRequest<{id:string;quantity:number}>("/inventory/adjustments",{method:"POST",body:JSON.stringify(input)});}
 
