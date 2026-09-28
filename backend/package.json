@@ -26,6 +26,7 @@
     "typescript": "latest",
     "@types/bcryptjs": "latest",
     "@types/jsonwebtoken": "latest",
-    "@types/nodemailer": "latest"
+    "@types/nodemailer": "latest",
+    "@types/pg": "^8.15.5"
   }
 }
