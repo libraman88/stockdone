@@ -49,3 +49,8 @@ export function createSale(input: { invoiceNo: string; paymentMethod: "cash"|"ca
 export function createPurchase(input: { invoiceNo: string; supplierId?: string; items: { variantId: string; quantity: number; cost: number }[] }) {
   return apiRequest<{id:string;invoiceNo:string;total:number}>("/purchases", { method: "POST", body: JSON.stringify(input) });
 }
+
+export type ApiCustomer = { id:string; name:string; phone?:string|null; address?:string|null; balance:number };
+export function getCustomers(){return apiRequest<ApiCustomer[]>("/customers");}
+export function createCustomer(input:{name:string;phone?:string;address?:string}){return apiRequest<ApiCustomer>("/customers",{method:"POST",body:JSON.stringify(input)});}
+export function recordCustomerPayment(id:string,amount:number,note?:string){return apiRequest<{customerId:string;balance:number}>(`/customers/${id}/payment`,{method:"POST",body:JSON.stringify({amount,note})});}
