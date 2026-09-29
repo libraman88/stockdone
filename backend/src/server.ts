@@ -78,7 +78,7 @@ app.post("/api/customers/:id/payment",authenticate,requirePermission("customers"
 const returnSchema=z.object({
   saleId:z.string().uuid(),
   type:z.enum(["return","exchange"]),
-  refundAmount:z.number().nonnegative().default(0),refundMethod:z.enum(["cash","card","bank","other"]).default("cash"),
+  refundAmount:z.number().nonnegative().default(0),refundMethod:z.enum(["cash","card","bank","other"]).default("cash"),clientReference:z.string().uuid().optional(),
   items:z.array(z.object({variantId:z.string().uuid(),quantity:z.number().int().positive(),unitPrice:z.number().nonnegative()})).min(1),
   exchangeItems:z.array(z.object({variantId:z.string().uuid(),quantity:z.number().int().positive(),unitPrice:z.number().nonnegative()})).default([])
 });
@@ -88,6 +88,7 @@ app.post("/api/returns",authenticate,requirePermission("returns"),async(req,res)
   const x=p.data,client=await pool.connect();
   try{
     await client.query("BEGIN");
+    if(x.clientReference){const existing=await client.query("SELECT id,type,refund_amount AS \"refundAmount\",price_difference AS \"priceDifference\" FROM returns WHERE business_id=$1 AND client_reference=$2 LIMIT 1",[req.user.businessId,x.clientReference]);if(existing.rowCount){await client.query("COMMIT");return res.status(200).json({...existing.rows[0],idempotent:true});}}
     const sale=await client.query("SELECT id,branch_id,status,customer_id,payment_method FROM sales WHERE id=$1 AND business_id=$2 FOR UPDATE",[x.saleId,req.user.businessId]);
     if(!sale.rowCount)throw new Error("SALE_NOT_FOUND");if(sale.rows[0].status==="void")throw new Error("SALE_VOID");
     const branchId=sale.rows[0].branch_id;
@@ -129,7 +130,7 @@ app.post("/api/returns",authenticate,requirePermission("returns"),async(req,res)
     const priceDifference=x.type==="exchange"?Math.max(0,exchangeValue-returnedValue):0;
     const id=crypto.randomUUID();
     if(sale.rows[0].payment_method==="other"&&sale.rows[0].customer_id){const balanceDelta=priceDifference-calculatedRefund;await client.query("UPDATE customers SET balance=balance+$1 WHERE id=$2 AND business_id=$3",[balanceDelta,sale.rows[0].customer_id,req.user.businessId]);if(balanceDelta<0)await client.query("INSERT INTO customer_transactions(id,customer_id,type,amount,reference_id,note) VALUES($1,$2,'payment',$3,$4,$5)",[crypto.randomUUID(),sale.rows[0].customer_id,Math.abs(balanceDelta),id,"Return/exchange credit"]);else if(balanceDelta>0)await client.query("INSERT INTO customer_transactions(id,customer_id,type,amount,reference_id,note) VALUES($1,$2,'credit_sale',$3,$4,$5)",[crypto.randomUUID(),sale.rows[0].customer_id,balanceDelta,id,"Exchange price difference"])}
-    await client.query("INSERT INTO returns(id,business_id,branch_id,sale_id,type,refund_amount,price_difference) VALUES($1,$2,$3,$4,$5,$6,$7)",[id,req.user.businessId,branchId,x.saleId,x.type,calculatedRefund,priceDifference]);const isCreditSale=sale.rows[0].payment_method==="other";if(!isCreditSale&&calculatedRefund>0)await client.query("INSERT INTO return_payments(id,business_id,branch_id,return_id,method,direction,amount) VALUES($1,$2,$3,$4,$5,'refund',$6)",[crypto.randomUUID(),req.user.businessId,branchId,id,x.refundMethod,calculatedRefund]);if(!isCreditSale&&priceDifference>0)await client.query("INSERT INTO return_payments(id,business_id,branch_id,return_id,method,direction,amount) VALUES($1,$2,$3,$4,$5,'received',$6)",[crypto.randomUUID(),req.user.businessId,branchId,id,x.refundMethod,priceDifference]);
+    await client.query("INSERT INTO returns(id,business_id,branch_id,sale_id,type,refund_amount,price_difference,client_reference) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",[id,req.user.businessId,branchId,x.saleId,x.type,calculatedRefund,priceDifference,x.clientReference||null]);const isCreditSale=sale.rows[0].payment_method==="other";if(!isCreditSale&&calculatedRefund>0)await client.query("INSERT INTO return_payments(id,business_id,branch_id,return_id,method,direction,amount) VALUES($1,$2,$3,$4,$5,'refund',$6)",[crypto.randomUUID(),req.user.businessId,branchId,id,x.refundMethod,calculatedRefund]);if(!isCreditSale&&priceDifference>0)await client.query("INSERT INTO return_payments(id,business_id,branch_id,return_id,method,direction,amount) VALUES($1,$2,$3,$4,$5,'received',$6)",[crypto.randomUUID(),req.user.businessId,branchId,id,x.refundMethod,priceDifference]);
     for(const i of x.items){
       const authoritativeUnitPrice=soldUnitPriceByVariant.get(i.variantId);
       if(authoritativeUnitPrice===undefined)throw new Error("ITEM_NOT_IN_SALE");
