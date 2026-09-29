@@ -160,7 +160,7 @@ export function startOfflineSync(onSynced?: (count:number)=>void) {
   const run=()=>{
     if(running)return;
     running=true;
-    void Promise.all([syncPendingSales(),syncPendingPurchases()])
+    void Promise.all([syncPendingSales(),syncPendingPurchases(),syncPendingCustomerPayments()])
       .then(r=>{if(r.synced>0)onSynced?.(r.synced)})
       .finally(()=>{running=false});
   };
@@ -178,7 +178,7 @@ export async function retryOfflineSyncConflict(conflictId:string){
   if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
   await offlineDb.exec("UPDATE sync_queue SET status='pending',last_error=NULL WHERE entity_id=(SELECT entity_id FROM sync_conflicts WHERE id=?) AND entity='sale'",[conflictId]);
   await offlineDb.exec("UPDATE sync_conflicts SET resolution='retrying' WHERE id=?",[conflictId]);
-  const result=await syncPendingSales();
+  const result=await syncPendingSales(); await syncPendingPurchases(); await syncPendingCustomerPayments();
   const rows=await offlineDb.query<{status:string}>("SELECT status FROM sync_queue WHERE entity='sale' AND entity_id=(SELECT entity_id FROM sync_conflicts WHERE id=?) ORDER BY created_at DESC LIMIT 1",[conflictId]);
   if(rows[0]?.status==="synced") await offlineDb.exec("UPDATE sync_conflicts SET resolution='resolved' WHERE id=?",[conflictId]);
   else await offlineDb.exec("UPDATE sync_conflicts SET resolution='pending' WHERE id=?",[conflictId]);
