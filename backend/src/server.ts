@@ -180,7 +180,7 @@ app.get("/api/reports/sales",authenticate,requirePermission("reports"),async(req
   const from=String(req.query.from||"1970-01-01"),to=String(req.query.to||"2999-12-31");
   try{
     const r=await pool.query("SELECT DATE(s.created_at) AS date,COUNT(*)::int AS invoices,COALESCE(SUM(s.total),0)::numeric AS total,COALESCE(SUM(s.discount),0)::numeric AS discounts FROM sales s WHERE s.business_id=$1 AND s.status='completed' AND s.created_at >= $2::date AND s.created_at < ($3::date + INTERVAL '1 day') GROUP BY DATE(s.created_at) ORDER BY date",[req.user.businessId,from,to]);
-    const payments=await pool.query("SELECT payment_method AS method,COUNT(*)::int AS invoices,COALESCE(SUM(total),0)::numeric AS total FROM sales WHERE business_id=$1 AND status='completed' AND created_at >= $2::date AND created_at < ($3::date + INTERVAL '1 day') GROUP BY payment_method ORDER BY total DESC",[req.user.businessId,from,to]);
+    const payments=await pool.query("SELECT p.method,COUNT(DISTINCT p.sale_id)::int AS invoices,COALESCE(SUM(p.amount),0)::numeric AS total FROM payments p JOIN sales s ON s.id=p.sale_id WHERE s.business_id=$1 AND s.status='completed' AND p.created_at >= $2::date AND p.created_at < ($3::date + INTERVAL '1 day') GROUP BY p.method ORDER BY total DESC",[req.user.businessId,from,to]);
     res.json({daily:r.rows,payments:payments.rows});
   }catch{res.status(500).json({error:"Unable to generate sales report"})}
 });
