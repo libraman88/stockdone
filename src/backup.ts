@@ -1,4 +1,4 @@
-const KEYS=["stockdone.users","stockdone.products","stockdone.sales","stockdone.movements","stockdone.suppliers","stockdone.purchases","stockdone.customers","stockdone.customer.transactions","stockdone.returns","stockdone.invoice.settings"];
+const KEYS=["stockdone.products","stockdone.sales","stockdone.movements","stockdone.suppliers","stockdone.purchases","stockdone.customers","stockdone.customer.transactions","stockdone.returns","stockdone.invoice.settings"];
 export function createBackup(){const data:Record<string,string|null>={};for(const k of KEYS)data[k]=localStorage.getItem(k);return JSON.stringify({app:"StockDone",version:1,createdAt:new Date().toISOString(),data},null,2)}
 export function downloadBackup(){const blob=new Blob([createBackup()],{type:"application/json"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="stockdone-backup-"+new Date().toISOString().slice(0,10)+".json";a.click();URL.revokeObjectURL(url)}
 export function restoreBackup(raw:string){
