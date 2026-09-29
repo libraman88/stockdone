@@ -199,7 +199,7 @@ app.get("/api/reports/cashiers",authenticate,requirePermission("reports"),async(
 app.get("/api/reports/purchases",authenticate,requirePermission("reports"),async(req,res)=>{
   const from=String(req.query.from||"1970-01-01"),to=String(req.query.to||"2999-12-31");
   try{
-    const r=await pool.query("SELECT pu.invoice_no,pu.purchase_date,pu.total,s.name AS supplier FROM purchases pu LEFT JOIN suppliers s ON s.id=pu.supplier_id WHERE pu.business_id=$1 AND pu.purchase_date >= $2::date AND pu.purchase_date < ($3::date + INTERVAL '1 day') ORDER BY pu.purchase_date DESC LIMIT 1000",[req.user.businessId,from,to]);
+    const r=await pool.query("SELECT pu.invoice_no,pu.purchase_date,pu.total,pu.payment_method,pu.paid_amount,(pu.total-pu.paid_amount)::numeric AS outstanding,s.name AS supplier FROM purchases pu LEFT JOIN suppliers s ON s.id=pu.supplier_id WHERE pu.business_id=$1 AND pu.purchase_date >= $2::date AND pu.purchase_date < ($3::date + INTERVAL '1 day') ORDER BY pu.purchase_date DESC LIMIT 1000",[req.user.businessId,from,to]);
     res.json(r.rows);
   }catch{res.status(500).json({error:"Unable to generate purchase report"})}
 });
