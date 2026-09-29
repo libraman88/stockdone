@@ -86,7 +86,7 @@ app.post("/api/returns",authenticate,requirePermission("returns"),async(req,res)
   const x=p.data,client=await pool.connect();
   try{
     await client.query("BEGIN");
-    const sale=await client.query("SELECT id,branch_id,status FROM sales WHERE id=$1 AND business_id=$2 FOR UPDATE",[x.saleId,req.user.businessId]);
+    const sale=await client.query("SELECT id,branch_id,status,customer_id,payment_method FROM sales WHERE id=$1 AND business_id=$2 FOR UPDATE",[x.saleId,req.user.businessId]);
     if(!sale.rowCount)throw new Error("SALE_NOT_FOUND");if(sale.rows[0].status==="void")throw new Error("SALE_VOID");
     const branchId=sale.rows[0].branch_id;
     if(branchId!==req.user.branchId)throw new Error("BRANCH_MISMATCH");
@@ -111,6 +111,7 @@ app.post("/api/returns",authenticate,requirePermission("returns"),async(req,res)
     const calculatedRefund=x.type==="return"?returnedValue:Math.max(0,returnedValue-exchangeValue);
     if(Math.abs(x.refundAmount-calculatedRefund)>0.01)throw new Error("REFUND_AMOUNT_MISMATCH");
     const priceDifference=x.type==="exchange"?Math.max(0,exchangeValue-returnedValue):0;
+    if(sale.rows[0].payment_method==="other"&&sale.rows[0].customer_id){const balanceDelta=priceDifference-calculatedRefund;await client.query("UPDATE customers SET balance=balance+$1 WHERE id=$2 AND business_id=$3",[balanceDelta,sale.rows[0].customer_id,req.user.businessId]);if(balanceDelta<0)await client.query("INSERT INTO customer_transactions(id,customer_id,type,amount,reference_id,note) VALUES($1,$2,'payment',$3,$4,$5)",[crypto.randomUUID(),sale.rows[0].customer_id,Math.abs(balanceDelta),x.saleId,"Return/exchange credit"]);else if(balanceDelta>0)await client.query("INSERT INTO customer_transactions(id,customer_id,type,amount,reference_id,note) VALUES($1,$2,'credit_sale',$3,$4,$5)",[crypto.randomUUID(),sale.rows[0].customer_id,balanceDelta,x.saleId,"Exchange price difference"])}
     const id=crypto.randomUUID();
     await client.query("INSERT INTO returns(id,business_id,branch_id,sale_id,type,refund_amount,price_difference) VALUES($1,$2,$3,$4,$5,$6,$7)",[id,req.user.businessId,branchId,x.saleId,x.type,calculatedRefund,priceDifference]);
     for(const i of x.items){
