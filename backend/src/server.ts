@@ -190,7 +190,7 @@ app.get("/api/reports/profit",authenticate,requirePermission("reports"),async(re
 app.get("/api/reports/products",authenticate,requirePermission("reports"),async(req,res)=>{
   const from=String(req.query.from||"1970-01-01"),to=String(req.query.to||"2999-12-31");
   try{
-    const r=await pool.query("SELECT p.name,p.sku,v.size,v.color,SUM(si.quantity)::int AS units,COALESCE(SUM(si.quantity*si.unit_price),0)::numeric AS sales,COALESCE(SUM(si.quantity*si.unit_cost),0)::numeric AS cost,COALESCE(SUM(si.quantity*(si.unit_price-si.unit_cost)),0)::numeric AS gross_profit FROM sale_items si JOIN sales s ON s.id=si.sale_id JOIN product_variants v ON v.id=si.variant_id JOIN products p ON p.id=v.product_id WHERE s.business_id=$1 AND s.status='completed' AND s.created_at >= $2::date AND s.created_at < ($3::date + INTERVAL '1 day') GROUP BY p.name,p.sku,v.size,v.color ORDER BY sales DESC",[req.user.businessId,from,to]);
+    const r=await pool.query("SELECT p.name,p.sku,v.size,v.color,COALESCE(SUM(si.quantity),0)::int AS units,COALESCE(SUM(si.quantity*si.unit_price),0)::numeric AS sales,COALESCE(SUM(si.quantity*si.unit_cost),0)::numeric AS cost,COALESCE(SUM(si.quantity*(si.unit_price-si.unit_cost)),0)::numeric AS gross_profit FROM sale_items si JOIN sales s ON s.id=si.sale_id JOIN product_variants v ON v.id=si.variant_id JOIN products p ON p.id=v.product_id WHERE s.business_id=$1 AND s.status='completed' AND s.created_at >= $2::date AND s.created_at < ($3::date + INTERVAL '1 day') GROUP BY p.name,p.sku,v.size,v.color ORDER BY sales DESC",[req.user.businessId,from,to]);
     res.json(r.rows);
   }catch{res.status(500).json({error:"Unable to generate product report"})}
 });
