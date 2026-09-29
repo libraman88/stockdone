@@ -1,12 +1,12 @@
 const KEYS=["stockdone.products","stockdone.sales","stockdone.movements","stockdone.suppliers","stockdone.purchases","stockdone.customers","stockdone.customer.transactions","stockdone.returns","stockdone.invoice.settings"];
-export function createBackup(){const data:Record<string,string|null>={};for(const k of KEYS)data[k]=localStorage.getItem(k);return JSON.stringify({app:"StockDone",version:1,createdAt:new Date().toISOString(),data},null,2)}
+export function createBackup(){const data:Record<string,string|null>={};for(const k of KEYS)data[k]=localStorage.getItem(k);return JSON.stringify({app:"StockDone",version:1,scope:"local-cache",createdAt:new Date().toISOString(),data},null,2)}
 export function downloadBackup(){const blob=new Blob([createBackup()],{type:"application/json"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="stockdone-backup-"+new Date().toISOString().slice(0,10)+".json";a.click();URL.revokeObjectURL(url)}
 export function restoreBackup(raw:string){
   let b:unknown;
   try{b=JSON.parse(raw)}catch{throw new Error("Invalid StockDone backup JSON.")}
   if(!b||typeof b!=="object"||Array.isArray(b))throw new Error("Invalid StockDone backup.");
   const backup=b as {app?:unknown;version?:unknown;data?:unknown};
-  if(backup.app!=="StockDone"||backup.version!==1||!backup.data||typeof backup.data!=="object"||Array.isArray(backup.data))throw new Error("Invalid StockDone backup.");
+  if(backup.app!=="StockDone"||backup.version!==1||(backup.scope!==undefined&&backup.scope!=="local-cache")||!backup.data||typeof backup.data!=="object"||Array.isArray(backup.data))throw new Error("Invalid StockDone backup.");
   const data=backup.data as Record<string,unknown>;
   for(const k of KEYS){
     const value=data[k];
