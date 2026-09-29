@@ -268,7 +268,7 @@ app.post("/api/auth/setup",async(req,res)=>{
     await client.query("INSERT INTO users(id,business_id,username,name,role,password_hash,active) VALUES($1,$2,$3,$4,'owner',$5,true)",[userId,businessId,p.data.username,p.data.ownerName,hash]);
     await client.query("COMMIT");
     const token=await newSession(userId,"owner",p.data.username);
-    await audit({user:{sub:userId},ip:req.ip},"auth.setup","user",userId,{username:p.data.username,businessName:p.data.businessName,branchCode:p.data.branchCode.toUpperCase()});
+    await audit({user:{sub:userId,businessId},ip:req.ip},"auth.setup","user",userId,{username:p.data.username,businessName:p.data.businessName,branchCode:p.data.branchCode.toUpperCase()});
     res.status(201).json({token,user:{id:userId,username:p.data.username,name:p.data.ownerName,role:"owner"}});
   }catch(e){
     await client.query("ROLLBACK");
