@@ -91,22 +91,26 @@ app.post("/api/returns",authenticate,requirePermission("returns"),async(req,res)
     const branchId=sale.rows[0].branch_id;
     if(branchId!==req.user.branchId)throw new Error("BRANCH_MISMATCH");
     let returnedValue=0;
-    for(const i of x.items){
-      const sold=await client.query("SELECT si.id,si.quantity,si.unit_price FROM sale_items si JOIN sales s ON s.id=si.sale_id WHERE si.sale_id=$1 AND si.variant_id=$2 AND s.business_id=$3 FOR UPDATE",[x.saleId,i.variantId,req.user.businessId]);
+    const returnQtyByVariant=new Map<string,number>();
+    for(const i of x.items)returnQtyByVariant.set(i.variantId,(returnQtyByVariant.get(i.variantId)||0)+i.quantity);
+    for(const [variantId,requestedQty] of returnQtyByVariant){
+      const sold=await client.query("SELECT si.quantity,si.unit_price FROM sale_items si JOIN sales s ON s.id=si.sale_id WHERE si.sale_id=$1 AND si.variant_id=$2 AND s.business_id=$3 FOR UPDATE",[x.saleId,variantId,req.user.businessId]);
       if(!sold.rowCount)throw new Error("ITEM_NOT_IN_SALE");
-      const already=await client.query("SELECT COALESCE(SUM(ri.quantity),0) AS qty FROM return_items ri JOIN returns r ON r.id=ri.return_id JOIN sales s ON s.id=r.sale_id WHERE r.sale_id=$1 AND ri.variant_id=$2 AND ri.direction='in' AND s.business_id=$3",[x.saleId,i.variantId,req.user.businessId]);
+      const already=await client.query("SELECT COALESCE(SUM(ri.quantity),0) AS qty FROM return_items ri JOIN returns r ON r.id=ri.return_id JOIN sales s ON s.id=r.sale_id WHERE r.sale_id=$1 AND ri.variant_id=$2 AND ri.direction='in' AND s.business_id=$3",[x.saleId,variantId,req.user.businessId]);
       const remaining=Number(sold.rows[0].quantity)-Number(already.rows[0].qty);
-      if(i.quantity>remaining)throw new Error("RETURN_QTY_EXCEEDS_SOLD");
-      returnedValue+=Number(sold.rows[0].unit_price)*i.quantity;
+      if(requestedQty>remaining)throw new Error("RETURN_QTY_EXCEEDS_SOLD");
+      returnedValue+=Number(sold.rows[0].unit_price)*requestedQty;
     }
     let exchangeValue=0;
+    const exchangeQtyByVariant=new Map<string,number>();
+    for(const i of x.exchangeItems)exchangeQtyByVariant.set(i.variantId,(exchangeQtyByVariant.get(i.variantId)||0)+i.quantity);
     if(x.type==="exchange"){
       if(x.exchangeItems.length===0)throw new Error("EXCHANGE_ITEM_REQUIRED");
-      for(const i of x.exchangeItems){
-        const inv=await client.query("SELECT i.quantity FROM inventory i JOIN product_variants pv ON pv.id=i.variant_id JOIN products p ON p.id=pv.product_id WHERE i.branch_id=$1 AND i.variant_id=$2 AND p.business_id=$3 FOR UPDATE",[branchId,i.variantId,req.user.businessId]);
-        if(!inv.rowCount||Number(inv.rows[0].quantity)<i.quantity)throw new Error("EXCHANGE_STOCK_UNAVAILABLE");
-        exchangeValue+=i.unitPrice*i.quantity;
+      for(const [variantId,requestedQty] of exchangeQtyByVariant){
+        const inv=await client.query("SELECT i.quantity FROM inventory i JOIN product_variants pv ON pv.id=i.variant_id JOIN products p ON p.id=pv.product_id WHERE i.branch_id=$1 AND i.variant_id=$2 AND p.business_id=$3 FOR UPDATE",[branchId,variantId,req.user.businessId]);
+        if(!inv.rowCount||Number(inv.rows[0].quantity)<requestedQty)throw new Error("EXCHANGE_STOCK_UNAVAILABLE");
       }
+      exchangeValue=x.exchangeItems.reduce((sum,i)=>sum+i.unitPrice*i.quantity,0);
     } else if(x.exchangeItems.length) throw new Error("EXCHANGE_ITEMS_NOT_ALLOWED");
     const calculatedRefund=x.type==="return"?returnedValue:Math.max(0,returnedValue-exchangeValue);
     if(Math.abs(x.refundAmount-calculatedRefund)>0.01)throw new Error("REFUND_AMOUNT_MISMATCH");
