@@ -294,7 +294,7 @@ app.post("/api/auth/setup",async(req,res)=>{
     await client.query("COMMIT");
     const token=await newSession(userId,"owner",p.data.username);
     await audit({user:{sub:userId,businessId},ip:req.ip},"auth.setup","user",userId,{username:p.data.username,businessName:p.data.businessName,branchCode:p.data.branchCode.toUpperCase()});
-    res.status(201).json({token,user:{id:userId,username:p.data.username,name:p.data.ownerName,role:"owner"}});
+    res.status(201).json({token,user:{id:userId,username:p.data.username,name:p.data.ownerName,role:"owner",businessId,branchId}});
   }catch(e){
     await client.query("ROLLBACK");
     const code=e instanceof Error?e.message:"";
@@ -321,7 +321,7 @@ app.post("/api/auth/login",async(req,res)=>{
   loginAttempts.delete(key);
   const u=r.rows[0],token=await newSession(u.id,u.role,u.username);
   await audit({user:{sub:u.id,businessId:u.business_id},ip:req.ip},"auth.login","user",u.id);
-  res.json({token,user:{id:u.id,username:u.username,name:u.name,role:u.role}});
+  res.json({token,user:{id:u.id,username:u.username,name:u.name,role:u.role,businessId:String(u.business_id),branchId:String((await pool.query("SELECT branch_id FROM users WHERE id=$1",[u.id])).rows[0]?.branch_id||"")}});
  }catch{res.status(500).json({error:"Login failed"})}
 });
 app.get("/api/auth/me",authenticate,(req:any,res)=>res.json({user:req.user}));
