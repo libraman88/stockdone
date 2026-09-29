@@ -219,7 +219,7 @@ export function startOfflineSync(onSynced?: (count:number)=>void) {
     if(running)return;
     running=true;
     void Promise.all([syncPendingSales(),syncPendingPurchases(),syncPendingCustomerPayments(),syncPendingReturns(),syncPendingExchanges()])
-      .then(r=>{if(r.synced>0)onSynced?.(r.synced)})
+      .then(results=>{const synced=results.reduce((total,result)=>total+result.synced,0);if(synced>0)onSynced?.(synced)})
       .finally(()=>{running=false});
   };
   window.addEventListener("online",run);
