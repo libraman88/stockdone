@@ -72,6 +72,37 @@ export async function queueOfflinePurchase(purchase:{id:string;invoiceNo:string;
     await offlineDb.exec("COMMIT");
   }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
 }
+export async function queueOfflineReturn(ret:{id:string;saleId:string;items:{id:string;productId:string;qty:number;refund:number;unitCost:number}[];refund:number;customerId?:string|null}) {
+  if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
+  const s=authStorage.getSession(); if(!s?.businessId||!s?.branchId)throw new Error("Offline return cannot be queued without branch context.");
+  const now=new Date().toISOString(); await offlineDb.exec("BEGIN");
+  try{
+    for(const i of ret.items){
+      const rows=await offlineDb.query<{qty:number}>("SELECT qty FROM products WHERE id=?",[i.productId]);
+      if(!rows[0])throw new Error("Product is not available offline.");
+      await offlineDb.exec("UPDATE products SET qty=qty+?,updated_at=? WHERE id=?",[i.qty,now,i.productId]);
+      await offlineDb.exec("INSERT INTO stock_movements(id,product_id,type,quantity,reason,reference_id,created_at) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),i.productId,"return",i.qty,"offline_return",ret.id,now]);
+    }
+    await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"return",ret.id,"create",JSON.stringify({...ret,businessId:s.businessId,branchId:s.branchId}),now,"pending"]);
+    await offlineDb.exec("COMMIT");
+  }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
+}
+export async function syncPendingReturns() {
+  if(!isOnline()||!(await offlineDb.available()))return{synced:0,failed:0};
+  const rows=await offlineDb.query<{id:string;payload:string}>("SELECT id,payload FROM sync_queue WHERE entity='return' AND operation='create' AND status='pending' ORDER BY created_at");
+  let synced=0,failed=0;
+  for(const row of rows)try{
+    const r=JSON.parse(row.payload),s=authStorage.getSession();
+    if(!s?.businessId||!s?.branchId||r.businessId!==s.businessId||r.branchId!==s.branchId)continue;
+    await apiRequest("/returns",{method:"POST",body:JSON.stringify({saleId:r.saleId,items:r.items.map((i:any)=>({variantId:i.productId,quantity:i.qty})),refundAmount:r.refund,customerId:r.customerId||undefined})});
+    await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
+  }catch(e){
+    const message=e instanceof Error?e.message:"Return sync failed",status=e instanceof ApiError?e.status:0;
+    const permanent=status>=400&&status<500&&status!==401&&status!==408&&status!==429;
+    await offlineDb.exec("UPDATE sync_queue SET status=?,attempts=attempts+1,last_error=? WHERE id=?",[permanent?"failed":"pending",message,row.id]);failed++;
+  }
+  return{synced,failed};
+}
 export async function cacheOfflineCustomer(customer:{id:string;name:string;phone?:string|null;balance?:number}) {
   if(!(await offlineDb.available()))return;
   await offlineDb.exec("CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,balance REAL NOT NULL DEFAULT 0,updated_at TEXT NOT NULL)");
@@ -160,7 +191,7 @@ export function startOfflineSync(onSynced?: (count:number)=>void) {
   const run=()=>{
     if(running)return;
     running=true;
-    void Promise.all([syncPendingSales(),syncPendingPurchases(),syncPendingCustomerPayments()])
+    void Promise.all([syncPendingSales(),syncPendingPurchases(),syncPendingCustomerPayments(),syncPendingReturns()])
       .then(r=>{if(r.synced>0)onSynced?.(r.synced)})
       .finally(()=>{running=false});
   };
