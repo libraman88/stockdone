@@ -46,9 +46,51 @@ export async function queueOfflineSale(sale:{id:string;invoiceNo:string;total:nu
   } catch(e){await offlineDb.exec("ROLLBACK");throw e;}
 }
 
-export async function queueOfflinePurchase(purchase:{id:string;invoiceNo:string;total:number;paymentMethod:string;paidAmount:number;supplierId:string;items:{id:string;productId:string;qty:number;price:number;unitCost:number}[]}) { throw new Error("Offline purchases are not enabled yet."); }
-
-export async function syncPendingPurchases() { return {synced:0,failed:0}; }
+export async function queueOfflinePurchase(purchase:{id:string;invoiceNo:string;total:number;paymentMethod:string;paidAmount:number;supplierId:string;items:{id:string;productId:string;qty:number;price:number;unitCost:number}[]}) {
+  if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
+  const session=authStorage.getSession();
+  if(!session?.businessId||!session?.branchId)throw new Error("Offline purchase cannot be queued without branch context.");
+  if(purchase.paymentMethod==="credit"&&purchase.paidAmount>0)throw new Error("Invalid credit payment.");
+  if(purchase.paidAmount>purchase.total)throw new Error("Payment exceeds purchase.");
+  const now=new Date().toISOString();
+  await offlineDb.exec("BEGIN");
+  try{
+    const duplicate=await offlineDb.query<{id:string}>("SELECT id FROM purchases WHERE invoice_no=?",[purchase.invoiceNo]);
+    if(duplicate[0])throw new Error("Duplicate purchase invoice.");
+    await offlineDb.exec("INSERT INTO purchases(id,invoice_no,supplier_id,total,payment_method,paid_amount,created_at) VALUES(?,?,?,?,?,?,?)",[purchase.id,purchase.invoiceNo,purchase.supplierId,purchase.total,purchase.paymentMethod,purchase.paidAmount,now]);
+    for(const item of purchase.items){
+      const stock=await offlineDb.query<{qty:number}>("SELECT qty FROM products WHERE id=?",[item.productId]);
+      if(!stock[0])throw new Error("Product is not available in offline stock cache.");
+      await offlineDb.exec("INSERT INTO purchase_items(id,purchase_id,product_id,qty,cost) VALUES(?,?,?,?,?)",[item.id,purchase.id,item.productId,item.qty,item.unitCost]);
+      await offlineDb.exec("UPDATE products SET qty=qty+?,updated_at=? WHERE id=?",[item.qty,now,item.productId]);
+      await offlineDb.exec("INSERT INTO stock_movements(id,product_id,type,quantity,reason,reference_id,created_at) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),item.productId,"purchase",item.qty,"offline_purchase",purchase.id,now]);
+    }
+    const payable=purchase.total-purchase.paidAmount;
+    if(payable>0)await offlineDb.exec("INSERT INTO supplier_transactions(id,supplier_id,type,amount,reference_id,note,created_at) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),purchase.supplierId,"purchase",payable,purchase.id,"Offline purchase payable",now]);
+    if(purchase.paidAmount>0)await offlineDb.exec("INSERT INTO supplier_transactions(id,supplier_id,type,amount,reference_id,note,created_at) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),purchase.supplierId,"payment",purchase.paidAmount,purchase.id,"Paid with offline purchase",now]);
+    await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"purchase",purchase.id,"create",JSON.stringify({...purchase,businessId:session.businessId,branchId:session.branchId}),now,"pending"]);
+    await offlineDb.exec("COMMIT");
+  }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
+}
+export async function syncPendingPurchases() {
+  if(!isOnline()||!(await offlineDb.available()))return{synced:0,failed:0};
+  const rows=await offlineDb.query<{id:string;entity_id:string;payload:string}>("SELECT id,entity_id,payload FROM sync_queue WHERE entity='purchase' AND operation='create' AND status='pending' ORDER BY created_at");
+  let synced=0,failed=0;
+  for(const row of rows){
+    try{
+      const purchase=JSON.parse(row.payload); const session=authStorage.getSession();
+      if(!session?.businessId||!session?.branchId||purchase.businessId!==session.businessId||purchase.branchId!==session.branchId)continue;
+      await apiRequest("/purchases",{method:"POST",body:JSON.stringify({invoiceNo:purchase.invoiceNo,supplierId:purchase.supplierId,items:purchase.items.map((i:any)=>({variantId:i.productId,quantity:i.qty,cost:i.unitCost})),paymentMethod:purchase.paymentMethod,paidAmount:purchase.paidAmount})});
+      await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
+    }catch(e){
+      const message=e instanceof Error?e.message:"Purchase sync failed"; const status=e instanceof ApiError?e.status:0;
+      const permanent=status>=400&&status<500&&status!==401&&status!==408&&status!==429;
+      await offlineDb.exec("UPDATE sync_queue SET status=?,attempts=attempts+1,last_error=? WHERE id=?",[permanent?"failed":"pending",message,row.id]);
+      failed++;
+    }
+  }
+  return{synced,failed};
+}
 
 export async function syncPendingSales() {
   if(!isOnline()||!(await offlineDb.available()))return{synced:0,failed:0};
@@ -83,7 +125,7 @@ export function startOfflineSync(onSynced?: (count:number)=>void) {
   const run=()=>{
     if(running)return;
     running=true;
-    void syncPendingSales()
+    void Promise.all([syncPendingSales(),syncPendingPurchases()])
       .then(r=>{if(r.synced>0)onSynced?.(r.synced)})
       .finally(()=>{running=false});
   };
