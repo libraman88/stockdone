@@ -91,6 +91,7 @@ app.post("/api/returns",authenticate,requirePermission("returns"),async(req,res)
     const branchId=sale.rows[0].branch_id;
     if(branchId!==req.user.branchId)throw new Error("BRANCH_MISMATCH");
     let returnedValue=0;
+    const soldUnitPriceByVariant=new Map<string,number>();
     const returnQtyByVariant=new Map<string,number>();
     for(const i of x.items)returnQtyByVariant.set(i.variantId,(returnQtyByVariant.get(i.variantId)||0)+i.quantity);
     for(const [variantId,requestedQty] of returnQtyByVariant){
@@ -99,6 +100,7 @@ app.post("/api/returns",authenticate,requirePermission("returns"),async(req,res)
       const already=await client.query("SELECT COALESCE(SUM(ri.quantity),0) AS qty FROM return_items ri JOIN returns r ON r.id=ri.return_id JOIN sales s ON s.id=r.sale_id WHERE r.sale_id=$1 AND ri.variant_id=$2 AND ri.direction='in' AND s.business_id=$3",[x.saleId,variantId,req.user.businessId]);
       const remaining=Number(sold.rows[0].quantity)-Number(already.rows[0].qty);
       if(requestedQty>remaining)throw new Error("RETURN_QTY_EXCEEDS_SOLD");
+      soldUnitPriceByVariant.set(variantId,Number(sold.rows[0].unit_price));
       returnedValue+=Number(sold.rows[0].unit_price)*requestedQty;
     }
     let exchangeValue=0;
@@ -119,7 +121,9 @@ app.post("/api/returns",authenticate,requirePermission("returns"),async(req,res)
     const id=crypto.randomUUID();
     await client.query("INSERT INTO returns(id,business_id,branch_id,sale_id,type,refund_amount,price_difference) VALUES($1,$2,$3,$4,$5,$6,$7)",[id,req.user.businessId,branchId,x.saleId,x.type,calculatedRefund,priceDifference]);
     for(const i of x.items){
-      await client.query("INSERT INTO return_items(id,return_id,variant_id,quantity,unit_price,direction) VALUES($1,$2,$3,$4,$5,'in')",[crypto.randomUUID(),id,i.variantId,i.quantity,i.unitPrice]);
+      const authoritativeUnitPrice=soldUnitPriceByVariant.get(i.variantId);
+      if(authoritativeUnitPrice===undefined)throw new Error("ITEM_NOT_IN_SALE");
+      await client.query("INSERT INTO return_items(id,return_id,variant_id,quantity,unit_price,direction) VALUES($1,$2,$3,$4,$5,'in')",[crypto.randomUUID(),id,i.variantId,i.quantity,authoritativeUnitPrice]);
       const returnInventory=await client.query("SELECT i.quantity FROM inventory i JOIN product_variants pv ON pv.id=i.variant_id JOIN products p ON p.id=pv.product_id WHERE i.branch_id=$1 AND i.variant_id=$2 AND p.business_id=$3 FOR UPDATE",[branchId,i.variantId,req.user.businessId]);
       if(!returnInventory.rowCount)throw new Error("INVENTORY_NOT_FOUND");
       await client.query("UPDATE inventory SET quantity=quantity+$1 WHERE branch_id=$2 AND variant_id=$3",[i.quantity,branchId,i.variantId]);
