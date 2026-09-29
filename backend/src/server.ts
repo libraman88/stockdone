@@ -203,7 +203,9 @@ function requirePermission(permission:string){
     try{
       const role=String(req.user?.role||"");
       if(role==="owner") return next();
-      const r=await pool.query("SELECT 1 FROM role_permissions rp JOIN roles r ON r.id=rp.role_id JOIN permissions p ON p.id=rp.permission_id WHERE r.business_id=$1 AND r.name=$2 AND p.code=$3 LIMIT 1",[process.env.DEFAULT_BUSINESS_ID,role,permission]);
+      const businessId=String(req.user?.businessId||"");
+      if(!businessId)return res.status(403).json({error:"Business context missing"});
+      const r=await pool.query("SELECT 1 FROM role_permissions rp JOIN roles r ON r.id=rp.role_id JOIN permissions p ON p.id=rp.permission_id WHERE r.business_id=$1 AND r.name=$2 AND p.code=$3 LIMIT 1",[businessId,role,permission]);
       if(!r.rowCount)return res.status(403).json({error:"Permission denied"});
       next();
     }catch{return res.status(500).json({error:"Permission check failed"})}
