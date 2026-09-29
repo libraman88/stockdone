@@ -103,7 +103,7 @@ app.post("/api/returns",authenticate,requirePermission("returns"),async(req,res)
     if(x.type==="exchange"){
       if(x.exchangeItems.length===0)throw new Error("EXCHANGE_ITEM_REQUIRED");
       for(const i of x.exchangeItems){
-        const inv=await client.query("SELECT quantity FROM inventory WHERE branch_id=$1 AND variant_id=$2 FOR UPDATE",[branchId,i.variantId]);
+        const inv=await client.query("SELECT i.quantity FROM inventory i JOIN product_variants pv ON pv.id=i.variant_id JOIN products p ON p.id=pv.product_id WHERE i.branch_id=$1 AND i.variant_id=$2 AND p.business_id=$3 FOR UPDATE",[branchId,i.variantId,req.user.businessId]);
         if(!inv.rowCount||Number(inv.rows[0].quantity)<i.quantity)throw new Error("EXCHANGE_STOCK_UNAVAILABLE");
         exchangeValue+=i.unitPrice*i.quantity;
       }
