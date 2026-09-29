@@ -46,6 +46,10 @@ export async function queueOfflineSale(sale:{id:string;invoiceNo:string;total:nu
   } catch(e){await offlineDb.exec("ROLLBACK");throw e;}
 }
 
+export async function queueOfflinePurchase(purchase:{id:string;invoiceNo:string;total:number;paymentMethod:string;paidAmount:number;supplierId:string;items:{id:string;productId:string;qty:number;price:number;unitCost:number}[]}) { throw new Error("Offline purchases are not enabled yet."); }
+
+export async function syncPendingPurchases() { return {synced:0,failed:0}; }
+
 export async function syncPendingSales() {
   if(!isOnline()||!(await offlineDb.available()))return{synced:0,failed:0};
   const rows=await offlineDb.query<{id:string;entity_id:string;payload:string}>("SELECT id,entity_id,payload FROM sync_queue WHERE entity='sale' AND operation='create' AND status='pending' ORDER BY created_at");
