@@ -76,7 +76,7 @@ app.post("/api/customers/:id/payment",authenticate,async(req,res)=>{const amount
 const returnSchema=z.object({
   saleId:z.string().uuid(),
   type:z.enum(["return","exchange"]),
-  refundAmount:z.number().nonnegative().default(0),
+  refundAmount:z.number().nonnegative().default(0),refundMethod:z.enum(["cash","card","bank","other"]).default("cash"),
   items:z.array(z.object({variantId:z.string().uuid(),quantity:z.number().int().positive(),unitPrice:z.number().nonnegative()})).min(1),
   exchangeItems:z.array(z.object({variantId:z.string().uuid(),quantity:z.number().int().positive(),unitPrice:z.number().nonnegative()})).default([])
 });
@@ -125,7 +125,7 @@ app.post("/api/returns",authenticate,requirePermission("returns"),async(req,res)
     const priceDifference=x.type==="exchange"?Math.max(0,exchangeValue-returnedValue):0;
     if(sale.rows[0].payment_method==="other"&&sale.rows[0].customer_id){const balanceDelta=priceDifference-calculatedRefund;await client.query("UPDATE customers SET balance=balance+$1 WHERE id=$2 AND business_id=$3",[balanceDelta,sale.rows[0].customer_id,req.user.businessId]);if(balanceDelta<0)await client.query("INSERT INTO customer_transactions(id,customer_id,type,amount,reference_id,note) VALUES($1,$2,'payment',$3,$4,$5)",[crypto.randomUUID(),sale.rows[0].customer_id,Math.abs(balanceDelta),x.saleId,"Return/exchange credit"]);else if(balanceDelta>0)await client.query("INSERT INTO customer_transactions(id,customer_id,type,amount,reference_id,note) VALUES($1,$2,'credit_sale',$3,$4,$5)",[crypto.randomUUID(),sale.rows[0].customer_id,balanceDelta,x.saleId,"Exchange price difference"])}
     const id=crypto.randomUUID();
-    await client.query("INSERT INTO returns(id,business_id,branch_id,sale_id,type,refund_amount,price_difference) VALUES($1,$2,$3,$4,$5,$6,$7)",[id,req.user.businessId,branchId,x.saleId,x.type,calculatedRefund,priceDifference]);
+    await client.query("INSERT INTO returns(id,business_id,branch_id,sale_id,type,refund_amount,price_difference) VALUES($1,$2,$3,$4,$5,$6,$7)",[id,req.user.businessId,branchId,x.saleId,x.type,calculatedRefund,priceDifference]);if(calculatedRefund>0)await client.query("INSERT INTO refund_payments(id,business_id,branch_id,return_id,method,amount) VALUES($1,$2,$3,$4,$5,$6)",[crypto.randomUUID(),req.user.businessId,branchId,id,x.refundMethod,calculatedRefund]);
     for(const i of x.items){
       const authoritativeUnitPrice=soldUnitPriceByVariant.get(i.variantId);
       if(authoritativeUnitPrice===undefined)throw new Error("ITEM_NOT_IN_SALE");
