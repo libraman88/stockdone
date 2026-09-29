@@ -146,3 +146,17 @@ CREATE TABLE IF NOT EXISTS refund_payments (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_refund_payments_return ON refund_payments(return_id,created_at DESC);
+
+
+-- Supplier payable ledger
+CREATE TABLE IF NOT EXISTS supplier_transactions (
+  id UUID PRIMARY KEY,
+  business_id UUID NOT NULL REFERENCES businesses(id),
+  supplier_id UUID NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK(type IN ('purchase','payment')),
+  amount NUMERIC(12,2) NOT NULL CHECK(amount >= 0),
+  reference_id UUID,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_supplier_transactions_supplier ON supplier_transactions(supplier_id,created_at DESC);
