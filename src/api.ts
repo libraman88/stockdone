@@ -32,8 +32,10 @@ export function setupOwner(input:{businessName:string;branchName:string;branchCo
   return apiRequest<{token:string;user:{id:string;username:string;name:string;role:string}}>("/auth/setup",{method:"POST",body:JSON.stringify(input)});
 }
 
+export function getAuthMe() { return apiRequest<{user:{sub:string;id:string;username:string;role:string;businessId:string;branchId:string;session:string}}>("/auth/me"); }
+
 export function login(username: string, password: string) {
-  return apiRequest<{token:string;user:{id:string;username:string;name:string;role:string}}>("/auth/login", {
+  return apiRequest<{token:string;user:{id:string;username:string;name:string;role:string;businessId?:string;branchId?:string}}>("/auth/login", {
     method: "POST", body: JSON.stringify({username,password})
   });
 }
