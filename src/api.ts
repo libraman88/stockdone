@@ -61,7 +61,7 @@ export function createSale(input: { invoiceNo: string; clientReference?: string;
   return apiRequest<{id:string;invoiceNo:string;total:number}>("/sales", { method: "POST", body: JSON.stringify(input) });
 }
 
-export function createPurchase(input: { invoiceNo: string; supplierId?: string; items: { variantId: string; quantity: number; cost: number }[] }) {
+export function createPurchase(input: { invoiceNo: string; supplierId?: string; paymentMethod?: "cash"|"card"|"bank"|"credit"; paidAmount?: number; items: { variantId: string; quantity: number; cost: number }[] }) {
   return apiRequest<{id:string;invoiceNo:string;total:number}>("/purchases", { method: "POST", body: JSON.stringify(input) });
 }
 
