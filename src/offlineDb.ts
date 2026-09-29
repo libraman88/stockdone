@@ -1,4 +1,5 @@
 import { apiRequest, ApiError } from "./api";
+import { authStorage } from "./auth";
 import { isOnline } from "./sync";
 
 type OfflineBridge = { status:()=>Promise<{available:boolean}>; exec:(sql:string,params?:unknown[])=>Promise<unknown>; query:<T=Record<string,unknown>>(sql:string,params?:unknown[])=>Promise<T[]> };
@@ -25,9 +26,12 @@ export async function getCachedProducts() {
   }>("SELECT id,name,sku,category,size,color,barcode,cost,price,qty,reorder_level FROM products ORDER BY name");
 }
 
-export async function queueOfflineSale(sale:{id:string;invoiceNo:string;total:number;paymentMethod:string;discount:number;customerId?:string|null;received?:number;change?:number;items:{id:string;productId:string;qty:number;price:number;unitCost:number}[]}) {
+export async function queueOfflineSale(sale:{id:string;invoiceNo:string;total:number;paymentMethod:string;discount:number;customerId?:string|null;received?:number;change?:number;businessId?:string;branchId?:string;items:{id:string;productId:string;qty:number;price:number;unitCost:number}[]}) {
   if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
   const now=new Date().toISOString();
+  const session=authStorage.getSession();
+  const scopedSale={...sale,businessId:sale.businessId||session?.businessId,branchId:sale.branchId||session?.branchId};
+  if(!scopedSale.businessId||!scopedSale.branchId)throw new Error("Offline sale cannot be queued without branch context.");
   await offlineDb.exec("BEGIN");
   try {
     for(const item of sale.items){const rows=await offlineDb.query<{qty:number}>("SELECT qty FROM products WHERE id=?",[item.productId]);if(!rows[0]||Number(rows[0].qty)<item.qty)throw new Error("Insufficient offline stock.");}
@@ -37,7 +41,7 @@ export async function queueOfflineSale(sale:{id:string;invoiceNo:string;total:nu
       await offlineDb.exec("UPDATE products SET qty=qty-?,updated_at=? WHERE id=?",[item.qty,now,item.productId]);
       await offlineDb.exec("INSERT INTO stock_movements(id,product_id,type,quantity,reason,reference_id,created_at) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),item.productId,"sale",-item.qty,"offline_sale",sale.id,now]);
     }
-    await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"sale",sale.id,"create",JSON.stringify(sale),now,"pending"]);
+    await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"sale",sale.id,"create",JSON.stringify(scopedSale),now,"pending"]);
     await offlineDb.exec("COMMIT");
   } catch(e){await offlineDb.exec("ROLLBACK");throw e;}
 }
@@ -49,6 +53,8 @@ export async function syncPendingSales() {
   for(const row of rows){
     try{
       const sale=JSON.parse(row.payload);
+      const session=authStorage.getSession();
+      if(!session?.businessId||!session?.branchId||sale.businessId!==session.businessId||sale.branchId!==session.branchId)continue;
       await apiRequest("/sales",{method:"POST",body:JSON.stringify({invoiceNo:sale.invoiceNo,clientReference:sale.id,paymentMethod:sale.paymentMethod,discount:sale.discount,customerId:sale.customerId||undefined,received:sale.received,change:sale.change,items:sale.items.map((i:any)=>({variantId:i.productId,qty:i.qty,price:i.price}))})});
       await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
     }catch(e){
