@@ -17,7 +17,7 @@ export function restoreBackup(raw:string){
     for(const k of KEYS){
       const value=data[k];
       if(value===null)localStorage.removeItem(k);
-      else localStorage.setItem(k,value);
+      else localStorage.setItem(k,value as string);
     }
   }catch(error){
     for(const k of KEYS){
