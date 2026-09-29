@@ -132,7 +132,7 @@ export function getStockTransfers(){return apiRequest<any[]>("/inventory/transfe
 
 export function getPurchases(){return apiRequest<any[]>("/purchases");}
 
-export type Supplier={id:string;name:string;phone?:string|null;address?:string|null};
+export type Supplier={id:string;name:string;phone?:string|null;address?:string|null;balance?:number};
 export function getSuppliers(){return apiRequest<Supplier[]>("/suppliers");}
 export function recordSupplierPayment(id:string,amount:number,note?:string){return apiRequest<{supplierId:string;balance:number}>(`/suppliers/${id}/payment`,{method:"POST",body:JSON.stringify({amount,note})});}
 export function createSupplier(input:{name:string;phone?:string;address?:string}){return apiRequest<Supplier>("/suppliers",{method:"POST",body:JSON.stringify(input)});}
