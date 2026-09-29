@@ -134,7 +134,6 @@ app.post("/api/returns",authenticate,requirePermission("returns"),async(req,res)
       const authoritativeUnitPrice=soldUnitPriceByVariant.get(i.variantId);
       if(authoritativeUnitPrice===undefined)throw new Error("ITEM_NOT_IN_SALE");
       const effectiveReturnUnitPrice=authoritativeUnitPrice*returnPriceFactor;
-      if(false)throw new Error("ITEM_NOT_IN_SALE");
       await client.query("INSERT INTO return_items(id,return_id,variant_id,quantity,unit_price,unit_cost,direction) VALUES($1,$2,$3,$4,$5,$6,'in')",[crypto.randomUUID(),id,i.variantId,i.quantity,effectiveReturnUnitPrice,soldUnitCostByVariant.get(i.variantId)||0]);
       const returnInventory=await client.query("SELECT i.quantity FROM inventory i JOIN product_variants pv ON pv.id=i.variant_id JOIN products p ON p.id=pv.product_id WHERE i.branch_id=$1 AND i.variant_id=$2 AND p.business_id=$3 FOR UPDATE",[branchId,i.variantId,req.user.businessId]);
       if(!returnInventory.rowCount)throw new Error("INVENTORY_NOT_FOUND");
