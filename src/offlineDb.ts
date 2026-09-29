@@ -72,6 +72,25 @@ export async function queueOfflinePurchase(purchase:{id:string;invoiceNo:string;
     await offlineDb.exec("COMMIT");
   }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
 }
+export async function cacheOfflineCustomer(customer:{id:string;name:string;phone?:string|null;balance?:number}) {
+  if(!(await offlineDb.available()))return;
+  await offlineDb.exec("CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,balance REAL NOT NULL DEFAULT 0,updated_at TEXT NOT NULL)");
+  await offlineDb.exec("INSERT INTO customers(id,name,phone,balance,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,phone=excluded.phone,balance=excluded.balance,updated_at=excluded.updated_at",[customer.id,customer.name,customer.phone??null,customer.balance??0,new Date().toISOString()]);
+}
+export async function queueOfflineCustomerPayment(payment:{id:string;customerId:string;amount:number;note?:string}) {
+  if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
+  const session=authStorage.getSession(); if(!session?.businessId||!session?.branchId)throw new Error("Offline payment cannot be queued without branch context.");
+  if(payment.amount<=0)throw new Error("Payment amount must be positive.");
+  const now=new Date().toISOString(); await offlineDb.exec("BEGIN");
+  try {
+    const rows=await offlineDb.query<{balance:number}>("SELECT balance FROM customers WHERE id=?",[payment.customerId]);
+    if(!rows[0])throw new Error("Customer is not available offline.");
+    if(payment.amount>Number(rows[0].balance))throw new Error("Payment exceeds customer balance.");
+    await offlineDb.exec("UPDATE customers SET balance=balance-?,updated_at=? WHERE id=?",[payment.amount,now,payment.customerId]);
+    await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"customer_payment",payment.id,"create",JSON.stringify({...payment,businessId:session.businessId,branchId:session.branchId}),now,"pending"]);
+    await offlineDb.exec("COMMIT");
+  } catch(e){await offlineDb.exec("ROLLBACK");throw e;}
+}
 export async function syncPendingPurchases() {
   if(!isOnline()||!(await offlineDb.available()))return{synced:0,failed:0};
   const rows=await offlineDb.query<{id:string;entity_id:string;payload:string}>("SELECT id,entity_id,payload FROM sync_queue WHERE entity='purchase' AND operation='create' AND status='pending' ORDER BY created_at");
