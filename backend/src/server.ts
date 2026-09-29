@@ -104,15 +104,17 @@ app.post("/api/returns",authenticate,requirePermission("returns"),async(req,res)
       returnedValue+=Number(sold.rows[0].unit_price)*requestedQty;
     }
     let exchangeValue=0;
+    const exchangeUnitPriceByVariant=new Map<string,number>();
     const exchangeQtyByVariant=new Map<string,number>();
     for(const i of x.exchangeItems)exchangeQtyByVariant.set(i.variantId,(exchangeQtyByVariant.get(i.variantId)||0)+i.quantity);
     if(x.type==="exchange"){
       if(x.exchangeItems.length===0)throw new Error("EXCHANGE_ITEM_REQUIRED");
       for(const [variantId,requestedQty] of exchangeQtyByVariant){
-        const inv=await client.query("SELECT i.quantity FROM inventory i JOIN product_variants pv ON pv.id=i.variant_id JOIN products p ON p.id=pv.product_id WHERE i.branch_id=$1 AND i.variant_id=$2 AND p.business_id=$3 FOR UPDATE",[branchId,variantId,req.user.businessId]);
+        const inv=await client.query("SELECT i.quantity,pv.price FROM inventory i JOIN product_variants pv ON pv.id=i.variant_id JOIN products p ON p.id=pv.product_id WHERE i.branch_id=$1 AND i.variant_id=$2 AND p.business_id=$3 FOR UPDATE",[branchId,variantId,req.user.businessId]);
         if(!inv.rowCount||Number(inv.rows[0].quantity)<requestedQty)throw new Error("EXCHANGE_STOCK_UNAVAILABLE");
+        exchangeUnitPriceByVariant.set(variantId,Number(inv.rows[0].price));
       }
-      exchangeValue=x.exchangeItems.reduce((sum,i)=>sum+i.unitPrice*i.quantity,0);
+      exchangeValue=x.exchangeItems.reduce((sum,i)=>sum+(exchangeUnitPriceByVariant.get(i.variantId)||0)*i.quantity,0);
     } else if(x.exchangeItems.length) throw new Error("EXCHANGE_ITEMS_NOT_ALLOWED");
     const calculatedRefund=x.type==="return"?returnedValue:Math.max(0,returnedValue-exchangeValue);
     if(Math.abs(x.refundAmount-calculatedRefund)>0.01)throw new Error("REFUND_AMOUNT_MISMATCH");
@@ -130,7 +132,9 @@ app.post("/api/returns",authenticate,requirePermission("returns"),async(req,res)
       await client.query("INSERT INTO stock_movements(id,branch_id,variant_id,type,quantity,reason,reference_id) VALUES($1,$2,$3,'sale_return',$4,'Customer return',$5)",[crypto.randomUUID(),branchId,i.variantId,i.quantity,id]);
     }
     for(const i of x.exchangeItems){
-      await client.query("INSERT INTO return_items(id,return_id,variant_id,quantity,unit_price,direction) VALUES($1,$2,$3,$4,$5,'out')",[crypto.randomUUID(),id,i.variantId,i.quantity,i.unitPrice]);
+      const authoritativeExchangePrice=exchangeUnitPriceByVariant.get(i.variantId);
+      if(authoritativeExchangePrice===undefined)throw new Error("EXCHANGE_ITEM_REQUIRED");
+      await client.query("INSERT INTO return_items(id,return_id,variant_id,quantity,unit_price,direction) VALUES($1,$2,$3,$4,$5,'out')",[crypto.randomUUID(),id,i.variantId,i.quantity,authoritativeExchangePrice]);
       await client.query("UPDATE inventory SET quantity=quantity-$1 WHERE branch_id=$2 AND variant_id=$3",[i.quantity,branchId,i.variantId]);
       await client.query("INSERT INTO stock_movements(id,branch_id,variant_id,type,quantity,reason,reference_id) VALUES($1,$2,$3,'exchange_out',$4,'Exchange replacement',$5)",[crypto.randomUUID(),branchId,i.variantId,-i.quantity,id]);
     }
