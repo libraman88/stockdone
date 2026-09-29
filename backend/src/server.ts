@@ -289,13 +289,13 @@ app.post("/api/auth/login",async(req,res)=>{
  const current=loginAttempts.get(key);
  if(current&&current.count>=5)return res.status(429).json({error:"Too many login attempts. Try again later."});
  try{
-  const r=await pool.query("SELECT id,username,name,role,password_hash,active FROM users WHERE business_id=$1 AND username=$2 LIMIT 1",[process.env.DEFAULT_BUSINESS_ID,p.data.username]);
+  const r=await pool.query("SELECT id,username,name,role,password_hash,active,business_id FROM users WHERE business_id=$1 AND username=$2 LIMIT 1",[process.env.DEFAULT_BUSINESS_ID,p.data.username]);
   if(!r.rowCount||!r.rows[0].active||!(await bcrypt.compare(p.data.password,r.rows[0].password_hash))){
    const x=loginAttempts.get(key)||{count:0,resetAt:now+15*60*1000};x.count++;loginAttempts.set(key,x);return res.status(401).json({error:"Invalid username or password"});
   }
   loginAttempts.delete(key);
   const u=r.rows[0],token=await newSession(u.id,u.role,u.username);
-  await audit({user:{sub:u.id},ip:req.ip},"auth.login","user",u.id);
+  await audit({user:{sub:u.id,businessId:u.business_id},ip:req.ip},"auth.login","user",u.id);
   res.json({token,user:{id:u.id,username:u.username,name:u.name,role:u.role}});
  }catch{res.status(500).json({error:"Login failed"})}
 });
@@ -305,8 +305,8 @@ app.post("/api/auth/logout",authenticate,async(req:any,res)=>{try{if(req.user?.s
 app.post("/api/auth/logout-all",authenticate,async(req:any,res)=>{try{await pool.query("UPDATE auth_sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL",[req.user.sub]);res.json({ok:true})}catch{res.status(500).json({error:"Logout all failed"})}});
 
 
-async function audit(req:any,action:string,entity?:string,entityId?:string,details?:unknown){try{await pool.query("INSERT INTO audit_logs(id,business_id,user_id,action,entity,entity_id,details,ip_address) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",[crypto.randomUUID(),process.env.DEFAULT_BUSINESS_ID,req.user?.sub||null,action,entity||null,entityId||null,details?JSON.stringify(details):null,req.ip||null])}catch{}}
-app.get("/api/audit-logs",authenticate,requirePermission("reports"),async(req:any,res)=>{try{const r=await pool.query("SELECT id,user_id,action,entity,entity_id,details,created_at FROM audit_logs WHERE business_id=$1 ORDER BY created_at DESC LIMIT 200",[process.env.DEFAULT_BUSINESS_ID]);res.json(r.rows)}catch{res.status(500).json({error:"Unable to load audit logs"})}});
+async function audit(req:any,action:string,entity?:string,entityId?:string,details?:unknown){try{const businessId=String(req.user?.businessId||"");if(!businessId)return;await pool.query("INSERT INTO audit_logs(id,business_id,user_id,action,entity,entity_id,details,ip_address) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",[crypto.randomUUID(),businessId,req.user?.sub||null,action,entity||null,entityId||null,details?JSON.stringify(details):null,req.ip||null])}catch{}}
+app.get("/api/audit-logs",authenticate,requirePermission("reports"),async(req:any,res)=>{try{const r=await pool.query("SELECT id,user_id,action,entity,entity_id,details,created_at FROM audit_logs WHERE business_id=$1 ORDER BY created_at DESC LIMIT 200",[req.user.businessId]);res.json(r.rows)}catch{res.status(500).json({error:"Unable to load audit logs"})}});
 
 const port=Number(process.env.PORT||4000);
 app.listen(port,()=>console.log(`StockDone API listening on :${port}`));
