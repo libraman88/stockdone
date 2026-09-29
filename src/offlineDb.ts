@@ -11,6 +11,8 @@ export const offlineDb = {
   query:<T=Record<string,unknown>>(sql:string,params:unknown[]=[])=>{if(!window.stockDoneOffline)throw new Error("Offline database bridge unavailable.");return window.stockDoneOffline.query<T>(sql,params)}
 };
 
+export async function resetOfflineTransactionalData(){if(!(await offlineDb.available()))return;await offlineDb.exec("BEGIN");try{for(const t of ["sale_items","sales","purchase_items","purchases","supplier_transactions","stock_movements","sync_queue","sync_conflicts"]){await offlineDb.exec(`DELETE FROM ${t}`)}await offlineDb.exec("UPDATE products SET qty=0,updated_at=?",[new Date().toISOString()]);await offlineDb.exec("COMMIT")}catch(e){await offlineDb.exec("ROLLBACK");throw e}}
+
 export async function cacheProduct(product:{id:string;name:string;sku:string;category?:string|null;size?:string|null;color?:string|null;barcode?:string|null;cost:number;price:number;qty:number;reorderLevel:number}) {
   if(!(await offlineDb.available()))return;
   const now=new Date().toISOString();
