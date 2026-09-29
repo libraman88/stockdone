@@ -41,3 +41,6 @@ export const exportSalesExcel=(rows:Record<string,unknown>[])=>downloadSheetExce
 export const exportPurchasesExcel=(rows:Record<string,unknown>[])=>downloadSheetExcel("Purchases","stockdone-purchases.xlsx",rows);
 export const exportCustomersExcel=(rows:Record<string,unknown>[])=>downloadSheetExcel("Customers","stockdone-customers.xlsx",rows);
 export const exportMovementsExcel=(rows:Record<string,unknown>[])=>downloadSheetExcel("Movements","stockdone-stock-movements.xlsx",rows);
+
+export const exportReturnsExcel=(rows:Record<string,unknown>[])=>downloadSheetExcel("Returns","stockdone-returns.xlsx",rows);
+export const exportReportExcel=(sheetName:string,fileName:string,rows:Record<string,unknown>[])=>downloadSheetExcel(sheetName,fileName,rows);
