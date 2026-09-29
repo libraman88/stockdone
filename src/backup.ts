@@ -12,10 +12,22 @@ export function restoreBackup(raw:string){
     const value=data[k];
     if(value!==null&&typeof value!=="string")throw new Error("Invalid backup data for "+k+".");
   }
-  for(const k of KEYS){
-    const value=data[k];
-    if(value===null)localStorage.removeItem(k);
-    else localStorage.setItem(k,value);
+  const previous=Object.fromEntries(KEYS.map(k=>[k,localStorage.getItem(k)])) as Record<string,string|null>;
+  try{
+    for(const k of KEYS){
+      const value=data[k];
+      if(value===null)localStorage.removeItem(k);
+      else localStorage.setItem(k,value);
+    }
+  }catch(error){
+    for(const k of KEYS){
+      try{
+        const value=previous[k];
+        if(value===null)localStorage.removeItem(k);
+        else localStorage.setItem(k,value);
+      }catch{}
+    }
+    throw new Error(error instanceof Error?"Backup restore failed: "+error.message:"Backup restore failed.");
   }
   location.reload();
 }
