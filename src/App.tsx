@@ -14,7 +14,7 @@ import { downloadBackup, restoreBackup } from "./backup";
 import { downloadProductsCsv, parseProductsCsv } from "./importExport";
 import { printBarcodeLabel, printBarcodeBatch, generateBarcode } from "./barcode";
 import { downloadProductsExcel, parseProductsExcel, exportInventoryExcel, exportSalesExcel, exportPurchasesExcel, exportCustomersExcel, exportMovementsExcel } from "./excel";
-import { cacheProducts, getCachedProducts, queueOfflineSale, startOfflineSync, getOfflineSyncConflicts, retryOfflineSyncConflict, resolveOfflineSyncConflict } from "./offlineDb";
+import { offlineDb, cacheProducts, getCachedProducts, queueOfflineSale, queueOfflinePurchase, startOfflineSync, getOfflineSyncConflicts, retryOfflineSyncConflict, resolveOfflineSyncConflict } from "./offlineDb";
 import { isOnline } from "./sync";
 import { printHtml, getPrinters, getSavedPrinterName, savePrinterName, handleScannerInput, getScannerSettings, saveScannerSettings, scannerBeep } from "./hardware";
 
