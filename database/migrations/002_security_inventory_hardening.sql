@@ -160,3 +160,8 @@ CREATE TABLE IF NOT EXISTS supplier_transactions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_supplier_transactions_supplier ON supplier_transactions(supplier_id,created_at DESC);
+
+
+-- Purchase payment terms
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS payment_method TEXT NOT NULL DEFAULT 'credit' CHECK(payment_method IN ('cash','card','bank','credit'));
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS paid_amount NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK(paid_amount >= 0);
