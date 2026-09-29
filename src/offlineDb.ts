@@ -91,6 +91,22 @@ export async function queueOfflineCustomerPayment(payment:{id:string;customerId:
     await offlineDb.exec("COMMIT");
   } catch(e){await offlineDb.exec("ROLLBACK");throw e;}
 }
+export async function syncPendingCustomerPayments() {
+  if(!isOnline()||!(await offlineDb.available()))return{synced:0,failed:0};
+  const rows=await offlineDb.query<{id:string;payload:string}>("SELECT id,payload FROM sync_queue WHERE entity='customer_payment' AND operation='create' AND status='pending' ORDER BY created_at");
+  let synced=0,failed=0;
+  for(const row of rows)try{
+    const p=JSON.parse(row.payload),s=authStorage.getSession();
+    if(!s?.businessId||!s?.branchId||p.businessId!==s.businessId||p.branchId!==s.branchId)continue;
+    await apiRequest("/customers/payments",{method:"POST",body:JSON.stringify({customerId:p.customerId,amount:p.amount,note:p.note||"Offline customer payment"})});
+    await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
+  }catch(e){
+    const message=e instanceof Error?e.message:"Customer payment sync failed",status=e instanceof ApiError?e.status:0;
+    const permanent=status>=400&&status<500&&status!==401&&status!==408&&status!==429;
+    await offlineDb.exec("UPDATE sync_queue SET status=?,attempts=attempts+1,last_error=? WHERE id=?",[permanent?"failed":"pending",message,row.id]);failed++;
+  }
+  return{synced,failed};
+}
 export async function syncPendingPurchases() {
   if(!isOnline()||!(await offlineDb.available()))return{synced:0,failed:0};
   const rows=await offlineDb.query<{id:string;entity_id:string;payload:string}>("SELECT id,entity_id,payload FROM sync_queue WHERE entity='purchase' AND operation='create' AND status='pending' ORDER BY created_at");
