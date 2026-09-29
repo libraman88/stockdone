@@ -90,7 +90,7 @@ export async function syncPendingExchanges() {
   for(const row of rows)try{
     const x=JSON.parse(row.payload),s=authStorage.getSession();
     if(!s?.businessId||!s?.branchId||x.businessId!==s.businessId||x.branchId!==s.branchId)continue;
-    await apiRequest("/returns/exchange",{method:"POST",body:JSON.stringify({saleId:x.saleId,returnedItems:x.returned.map((i:any)=>({variantId:i.productId,quantity:i.qty})),replacementItems:x.replacement.map((i:any)=>({variantId:i.productId,quantity:i.qty,price:i.price})),difference:x.difference,customerId:x.customerId||undefined})});
+    await apiRequest("/returns",{method:"POST",body:JSON.stringify({saleId:x.saleId,type:"exchange",refundAmount:0,items:x.returned.map((i:any)=>({variantId:i.productId,quantity:i.qty,unitPrice:0})),exchangeItems:x.replacement.map((i:any)=>({variantId:i.productId,quantity:i.qty,unitPrice:i.price}))})});
     await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
   }catch(e){
     const message=e instanceof Error?e.message:"Exchange sync failed",status=e instanceof ApiError?e.status:0;
@@ -121,7 +121,7 @@ export async function syncPendingReturns() {
   for(const row of rows)try{
     const r=JSON.parse(row.payload),s=authStorage.getSession();
     if(!s?.businessId||!s?.branchId||r.businessId!==s.businessId||r.branchId!==s.branchId)continue;
-    await apiRequest("/returns",{method:"POST",body:JSON.stringify({saleId:r.saleId,items:r.items.map((i:any)=>({variantId:i.productId,quantity:i.qty})),refundAmount:r.refund,customerId:r.customerId||undefined})});
+    await apiRequest("/returns",{method:"POST",body:JSON.stringify({saleId:r.saleId,type:"return",refundAmount:r.refund,items:r.items.map((i:any)=>({variantId:i.productId,quantity:i.qty,unitPrice:i.refund/i.qty})),exchangeItems:[]})});
     await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
   }catch(e){
     const message=e instanceof Error?e.message:"Return sync failed",status=e instanceof ApiError?e.status:0;
@@ -156,7 +156,7 @@ export async function syncPendingCustomerPayments() {
   for(const row of rows)try{
     const p=JSON.parse(row.payload),s=authStorage.getSession();
     if(!s?.businessId||!s?.branchId||p.businessId!==s.businessId||p.branchId!==s.branchId)continue;
-    await apiRequest("/customers/payments",{method:"POST",body:JSON.stringify({customerId:p.customerId,amount:p.amount,note:p.note||"Offline customer payment"})});
+    await apiRequest(`/customers/${p.customerId}/payment`,{method:"POST",body:JSON.stringify({amount:p.amount,note:p.note||"Offline customer payment"})});
     await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
   }catch(e){
     const message=e instanceof Error?e.message:"Customer payment sync failed",status=e instanceof ApiError?e.status:0;
