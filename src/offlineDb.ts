@@ -72,6 +72,33 @@ export async function queueOfflinePurchase(purchase:{id:string;invoiceNo:string;
     await offlineDb.exec("COMMIT");
   }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
 }
+export async function queueOfflineExchange(x:{id:string;saleId:string;returned:{id:string;productId:string;qty:number}[];replacement:{id:string;productId:string;qty:number;price:number;unitCost:number}[];difference:number;customerId?:string|null}) {
+  if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
+  const s=authStorage.getSession(); if(!s?.businessId||!s?.branchId)throw new Error("Offline exchange cannot be queued without branch context.");
+  const now=new Date().toISOString(); await offlineDb.exec("BEGIN");
+  try{
+    for(const i of x.returned){const r=await offlineDb.query<{qty:number}>("SELECT qty FROM products WHERE id=?",[i.productId]);if(!r[0])throw new Error("Returned product is not available offline.");await offlineDb.exec("UPDATE products SET qty=qty+?,updated_at=? WHERE id=?",[i.qty,now,i.productId]);await offlineDb.exec("INSERT INTO stock_movements(id,product_id,type,quantity,reason,reference_id,created_at) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),i.productId,"exchange_return",i.qty,"offline_exchange",x.id,now]);}
+    for(const i of x.replacement){const r=await offlineDb.query<{qty:number}>("SELECT qty FROM products WHERE id=?",[i.productId]);if(!r[0]||Number(r[0].qty)<i.qty)throw new Error("Insufficient offline stock for exchange.");await offlineDb.exec("UPDATE products SET qty=qty-?,updated_at=? WHERE id=?",[i.qty,now,i.productId]);await offlineDb.exec("INSERT INTO stock_movements(id,product_id,type,quantity,reason,reference_id,created_at) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),i.productId,"exchange_sale",-i.qty,"offline_exchange",x.id,now]);}
+    await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"exchange",x.id,"create",JSON.stringify({...x,businessId:s.businessId,branchId:s.branchId}),now,"pending"]);
+    await offlineDb.exec("COMMIT");
+  }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
+}
+export async function syncPendingExchanges() {
+  if(!isOnline()||!(await offlineDb.available()))return{synced:0,failed:0};
+  const rows=await offlineDb.query<{id:string;payload:string}>("SELECT id,payload FROM sync_queue WHERE entity='exchange' AND operation='create' AND status='pending' ORDER BY created_at");
+  let synced=0,failed=0;
+  for(const row of rows)try{
+    const x=JSON.parse(row.payload),s=authStorage.getSession();
+    if(!s?.businessId||!s?.branchId||x.businessId!==s.businessId||x.branchId!==s.branchId)continue;
+    await apiRequest("/returns/exchange",{method:"POST",body:JSON.stringify({saleId:x.saleId,returnedItems:x.returned.map((i:any)=>({variantId:i.productId,quantity:i.qty})),replacementItems:x.replacement.map((i:any)=>({variantId:i.productId,quantity:i.qty,price:i.price})),difference:x.difference,customerId:x.customerId||undefined})});
+    await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
+  }catch(e){
+    const message=e instanceof Error?e.message:"Exchange sync failed",status=e instanceof ApiError?e.status:0;
+    const permanent=status>=400&&status<500&&status!==401&&status!==408&&status!==429;
+    await offlineDb.exec("UPDATE sync_queue SET status=?,attempts=attempts+1,last_error=? WHERE id=?",[permanent?"failed":"pending",message,row.id]);failed++;
+  }
+  return{synced,failed};
+}
 export async function queueOfflineReturn(ret:{id:string;saleId:string;items:{id:string;productId:string;qty:number;refund:number;unitCost:number}[];refund:number;customerId?:string|null}) {
   if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
   const s=authStorage.getSession(); if(!s?.businessId||!s?.branchId)throw new Error("Offline return cannot be queued without branch context.");
@@ -191,7 +218,7 @@ export function startOfflineSync(onSynced?: (count:number)=>void) {
   const run=()=>{
     if(running)return;
     running=true;
-    void Promise.all([syncPendingSales(),syncPendingPurchases(),syncPendingCustomerPayments(),syncPendingReturns()])
+    void Promise.all([syncPendingSales(),syncPendingPurchases(),syncPendingCustomerPayments(),syncPendingReturns(),syncPendingExchanges()])
       .then(r=>{if(r.synced>0)onSynced?.(r.synced)})
       .finally(()=>{running=false});
   };
