@@ -5,7 +5,7 @@ export function restoreBackup(raw:string){
   let b:unknown;
   try{b=JSON.parse(raw)}catch{throw new Error("Invalid StockDone backup JSON.")}
   if(!b||typeof b!=="object"||Array.isArray(b))throw new Error("Invalid StockDone backup.");
-  const backup=b as {app?:unknown;version?:unknown;data?:unknown};
+  const backup=b as {app?:unknown;version?:unknown;scope?:unknown;data?:unknown};
   if(backup.app!=="StockDone"||backup.version!==1||(backup.scope!==undefined&&backup.scope!=="local-cache")||!backup.data||typeof backup.data!=="object"||Array.isArray(backup.data))throw new Error("Invalid StockDone backup.");
   const data=backup.data as Record<string,unknown>;
   for(const k of KEYS){
