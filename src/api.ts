@@ -135,6 +135,8 @@ export function getPurchases(){return apiRequest<any[]>("/purchases");}
 export type Supplier={id:string;name:string;phone?:string|null;address?:string|null;balance?:number};
 export function getSuppliers(){return apiRequest<Supplier[]>("/suppliers");}
 export function recordSupplierPayment(id:string,amount:number,note?:string){return apiRequest<{supplierId:string;balance:number}>(`/suppliers/${id}/payment`,{method:"POST",body:JSON.stringify({amount,note})});}
+export type SupplierTransaction={id:string;type:"purchase"|"payment";amount:number;reference_id?:string|null;note?:string|null;created_at:string};
+export function getSupplierTransactions(id:string){return apiRequest<SupplierTransaction[]>(`/suppliers/${id}/transactions`);}
 export function createSupplier(input:{name:string;phone?:string;address?:string}){return apiRequest<Supplier>("/suppliers",{method:"POST",body:JSON.stringify(input)});}
 
 export type InventorySummary={product_id:string;name:string;sku:string;variant_id:string;size:string|null;color:string|null;barcode:string|null;quantity:number;cost:number;price:number;reorder_level:number};
