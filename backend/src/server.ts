@@ -92,9 +92,9 @@ app.post("/api/returns",authenticate,requirePermission("returns"),async(req,res)
     if(branchId!==req.user.branchId)throw new Error("BRANCH_MISMATCH");
     let returnedValue=0;
     for(const i of x.items){
-      const sold=await client.query("SELECT si.id,si.quantity,si.unit_price FROM sale_items si WHERE si.sale_id=$1 AND si.variant_id=$2 FOR UPDATE",[x.saleId,i.variantId]);
+      const sold=await client.query("SELECT si.id,si.quantity,si.unit_price FROM sale_items si JOIN sales s ON s.id=si.sale_id WHERE si.sale_id=$1 AND si.variant_id=$2 AND s.business_id=$3 FOR UPDATE",[x.saleId,i.variantId,req.user.businessId]);
       if(!sold.rowCount)throw new Error("ITEM_NOT_IN_SALE");
-      const already=await client.query("SELECT COALESCE(SUM(ri.quantity),0) AS qty FROM return_items ri JOIN returns r ON r.id=ri.return_id WHERE r.sale_id=$1 AND ri.variant_id=$2 AND ri.direction='in'",[x.saleId,i.variantId]);
+      const already=await client.query("SELECT COALESCE(SUM(ri.quantity),0) AS qty FROM return_items ri JOIN returns r ON r.id=ri.return_id JOIN sales s ON s.id=r.sale_id WHERE r.sale_id=$1 AND ri.variant_id=$2 AND ri.direction='in' AND s.business_id=$3",[x.saleId,i.variantId,req.user.businessId]);
       const remaining=Number(sold.rows[0].quantity)-Number(already.rows[0].qty);
       if(i.quantity>remaining)throw new Error("RETURN_QTY_EXCEEDS_SOLD");
       returnedValue+=Number(sold.rows[0].unit_price)*i.quantity;
