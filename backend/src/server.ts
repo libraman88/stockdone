@@ -93,6 +93,7 @@ app.post("/api/returns",authenticate,requirePermission("returns"),async(req,res)
     const branchId=sale.rows[0].branch_id;
     if(branchId!==req.user.branchId)throw new Error("BRANCH_MISMATCH");
     let returnedValue=0;
+    const saleTotals=await client.query("SELECT subtotal,discount,total FROM sales WHERE id=$1 AND business_id=$2 FOR UPDATE",[x.saleId,req.user.businessId]);if(!saleTotals.rowCount)throw new Error("SALE_NOT_FOUND");const saleSubtotal=Number(saleTotals.rows[0].subtotal||0);const saleTotal=Number(saleTotals.rows[0].total||0);const returnPriceFactor=saleSubtotal>0?Math.max(0,Math.min(1,saleTotal/saleSubtotal)):0;
     const soldUnitPriceByVariant=new Map<string,number>();
     const soldUnitCostByVariant=new Map<string,number>();
     const returnQtyByVariant=new Map<string,number>();
@@ -106,7 +107,7 @@ app.post("/api/returns",authenticate,requirePermission("returns"),async(req,res)
       if(requestedQty>remaining)throw new Error("RETURN_QTY_EXCEEDS_SOLD");
       soldUnitPriceByVariant.set(variantId,Number(sold.rows[0].unit_price));
       soldUnitCostByVariant.set(variantId,Number(sold.rows[0].unit_cost||0));
-      returnedValue+=Number(sold.rows[0].unit_price)*requestedQty;
+      returnedValue+=Number(sold.rows[0].unit_price)*requestedQty*returnPriceFactor;
     }
     let exchangeValue=0;
     const exchangeUnitPriceByVariant=new Map<string,number>();
