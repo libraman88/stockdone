@@ -135,17 +135,7 @@ CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user
 -- Snapshot return/exchange cost for historical profit reporting
 ALTER TABLE return_items ADD COLUMN IF NOT EXISTS unit_cost NUMERIC(12,2) NOT NULL DEFAULT 0;
 
--- Return/refund payment ledger
-CREATE TABLE IF NOT EXISTS refund_payments (
-  id UUID PRIMARY KEY,
-  business_id UUID NOT NULL REFERENCES businesses(id),
-  branch_id UUID NOT NULL REFERENCES branches(id),
-  return_id UUID NOT NULL REFERENCES returns(id) ON DELETE CASCADE,
-  method TEXT NOT NULL CHECK(method IN ('cash','card','bank','other')),
-  amount NUMERIC(12,2) NOT NULL CHECK(amount >= 0),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS idx_refund_payments_return ON refund_payments(return_id,created_at DESC);
+-- Return/refund payment ledger is managed by 004_return_accounting.sql.
 
 
 -- Supplier payable ledger
