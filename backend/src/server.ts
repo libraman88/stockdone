@@ -92,19 +92,22 @@ app.post("/api/returns",authenticate,requirePermission("returns"),async(req,res)
     if(branchId!==req.user.branchId)throw new Error("BRANCH_MISMATCH");
     let returnedValue=0;
     const soldUnitPriceByVariant=new Map<string,number>();
+    const soldUnitCostByVariant=new Map<string,number>();
     const returnQtyByVariant=new Map<string,number>();
     for(const i of x.items)returnQtyByVariant.set(i.variantId,(returnQtyByVariant.get(i.variantId)||0)+i.quantity);
     for(const [variantId,requestedQty] of returnQtyByVariant){
-      const sold=await client.query("SELECT si.quantity,si.unit_price FROM sale_items si JOIN sales s ON s.id=si.sale_id WHERE si.sale_id=$1 AND si.variant_id=$2 AND s.business_id=$3 FOR UPDATE",[x.saleId,variantId,req.user.businessId]);
+      const sold=await client.query("SELECT si.quantity,si.unit_price,si.unit_cost FROM sale_items si JOIN sales s ON s.id=si.sale_id WHERE si.sale_id=$1 AND si.variant_id=$2 AND s.business_id=$3 FOR UPDATE",[x.saleId,variantId,req.user.businessId]);
       if(!sold.rowCount)throw new Error("ITEM_NOT_IN_SALE");
       const already=await client.query("SELECT COALESCE(SUM(ri.quantity),0) AS qty FROM return_items ri JOIN returns r ON r.id=ri.return_id JOIN sales s ON s.id=r.sale_id WHERE r.sale_id=$1 AND ri.variant_id=$2 AND ri.direction='in' AND s.business_id=$3",[x.saleId,variantId,req.user.businessId]);
       const remaining=Number(sold.rows[0].quantity)-Number(already.rows[0].qty);
       if(requestedQty>remaining)throw new Error("RETURN_QTY_EXCEEDS_SOLD");
       soldUnitPriceByVariant.set(variantId,Number(sold.rows[0].unit_price));
+      soldUnitCostByVariant.set(variantId,Number(sold.rows[0].unit_cost||0));
       returnedValue+=Number(sold.rows[0].unit_price)*requestedQty;
     }
     let exchangeValue=0;
     const exchangeUnitPriceByVariant=new Map<string,number>();
+    const exchangeUnitCostByVariant=new Map<string,number>();
     const exchangeQtyByVariant=new Map<string,number>();
     for(const i of x.exchangeItems)exchangeQtyByVariant.set(i.variantId,(exchangeQtyByVariant.get(i.variantId)||0)+i.quantity);
     if(x.type==="exchange"){
@@ -113,6 +116,7 @@ app.post("/api/returns",authenticate,requirePermission("returns"),async(req,res)
         const inv=await client.query("SELECT i.quantity,pv.price FROM inventory i JOIN product_variants pv ON pv.id=i.variant_id JOIN products p ON p.id=pv.product_id WHERE i.branch_id=$1 AND i.variant_id=$2 AND p.business_id=$3 FOR UPDATE",[branchId,variantId,req.user.businessId]);
         if(!inv.rowCount||Number(inv.rows[0].quantity)<requestedQty)throw new Error("EXCHANGE_STOCK_UNAVAILABLE");
         exchangeUnitPriceByVariant.set(variantId,Number(inv.rows[0].price));
+        exchangeUnitCostByVariant.set(variantId,Number(inv.rows[0].cost||0));
       }
       exchangeValue=x.exchangeItems.reduce((sum,i)=>sum+(exchangeUnitPriceByVariant.get(i.variantId)||0)*i.quantity,0);
     } else if(x.exchangeItems.length) throw new Error("EXCHANGE_ITEMS_NOT_ALLOWED");
@@ -134,7 +138,7 @@ app.post("/api/returns",authenticate,requirePermission("returns"),async(req,res)
     for(const i of x.exchangeItems){
       const authoritativeExchangePrice=exchangeUnitPriceByVariant.get(i.variantId);
       if(authoritativeExchangePrice===undefined)throw new Error("EXCHANGE_ITEM_REQUIRED");
-      await client.query("INSERT INTO return_items(id,return_id,variant_id,quantity,unit_price,direction) VALUES($1,$2,$3,$4,$5,'out')",[crypto.randomUUID(),id,i.variantId,i.quantity,authoritativeExchangePrice]);
+      await client.query("INSERT INTO return_items(id,return_id,variant_id,quantity,unit_price,unit_cost,direction) VALUES($1,$2,$3,$4,$5,$6,'out')",[crypto.randomUUID(),id,i.variantId,i.quantity,authoritativeExchangePrice,exchangeUnitCostByVariant.get(i.variantId)||0]);
       await client.query("UPDATE inventory SET quantity=quantity-$1 WHERE branch_id=$2 AND variant_id=$3",[i.quantity,branchId,i.variantId]);
       await client.query("INSERT INTO stock_movements(id,branch_id,variant_id,type,quantity,reason,reference_id) VALUES($1,$2,$3,'exchange_out',$4,'Exchange replacement',$5)",[crypto.randomUUID(),branchId,i.variantId,-i.quantity,id]);
     }
