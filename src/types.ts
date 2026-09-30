@@ -4,6 +4,10 @@ export type Product = {
   name: string;
   sku: string;
   category: string;
+  brand?: string;
+  subCategory?: string;
+  floor?: string;
+  warehouse?: string;
   size: string;
   color: string;
   barcode: string;
