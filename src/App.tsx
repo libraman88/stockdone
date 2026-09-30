@@ -9,7 +9,7 @@ import { settingsStorage } from "./settings";
 import { invoiceHtml } from "./invoice";
 import { authStorage, type User, type Role } from "./auth";
 import { canOpen } from "./permissions";
-import { getRawMaterials, createRawMaterial, getFabricLots, createFabricLot, getCmtJobs, createCmtJob } from "./api";
+import { getRawMaterials, createRawMaterial, getFabricLots, createFabricLot, getCmtJobs, createCmtJob, updateCmtJob } from "./api";
 import { login as apiLogin, setupOwner as apiSetupOwner, setApiToken, requestPasswordReset, confirmPasswordReset, getPurchases as apiGetPurchases, getInventorySummary as apiGetInventorySummary, getInventoryMovements as apiGetInventoryMovements, getSuppliers as apiGetSuppliers, createSupplier as apiCreateSupplier, getCategoryReport, getCashierReport, getProfitReport, getReturnProfitImpact, getPaymentReport, getBranches as apiGetBranches, getStockTransfers as apiGetStockTransfers, createStockTransfer as apiCreateStockTransfer, receiveStockTransfer as apiReceiveStockTransfer, createBranch as apiCreateBranch, reconcileOfflineStock, recordSupplierPayment as apiRecordSupplierPayment, getSupplierTransactions as apiGetSupplierTransactions, apiRequest } from "./api";
 import { downloadBackup, restoreBackup } from "./backup";
 import { downloadProductsCsv, parseProductsCsv } from "./importExport";
