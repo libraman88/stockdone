@@ -51,6 +51,43 @@ app.put("/api/garments/cmt-jobs/:id",authenticate,requirePermission("inventory")
   }catch{res.status(500).json({error:"Unable to update CMT job"})}
 });
 
+const finishedStockSchema=z.object({jobId:z.string().uuid(),variantId:z.string().uuid()});
+app.get("/api/garments/finished-stock",authenticate,requirePermission("inventory"),async(req,res)=>{
+  try{
+    const r=await pool.query("SELECT sm.id,sm.reference_id AS \"jobId\",sm.variant_id AS \"variantId\",p.name AS \"productName\",p.sku,pv.size,pv.color,sm.quantity,sm.created_at AS \"createdAt\" FROM stock_movements sm JOIN product_variants pv ON pv.id=sm.variant_id JOIN products p ON p.id=pv.product_id WHERE p.business_id=$1 AND sm.branch_id=$2 AND sm.type='production_in' ORDER BY sm.created_at DESC LIMIT 200",[req.user.businessId,req.user.branchId]);
+    res.json(r.rows);
+  }catch{res.status(500).json({error:"Unable to load finished stock receipts"})}
+});
+app.post("/api/garments/finished-stock",authenticate,requirePermission("inventory"),async(req,res)=>{
+  const p=finishedStockSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:"Invalid finished stock receipt"});
+  const client=await pool.connect();
+  try{
+    await client.query("BEGIN");
+    const job=await client.query("SELECT id,pieces_received,status FROM cmt_jobs WHERE id=$1 AND business_id=$2 FOR UPDATE",[p.data.jobId,req.user.businessId]);
+    if(!job.rowCount)throw new Error("CMT_JOB_NOT_FOUND");
+    if(job.rows[0].status!=="sent")throw new Error("CMT_JOB_NOT_READY");
+    const pieces=Number(job.rows[0].pieces_received||0);if(pieces<=0)throw new Error("NO_PIECES_RECEIVED");
+    const prior=await client.query("SELECT id FROM stock_movements WHERE reference_id=$1 AND type='production_in' LIMIT 1",[p.data.jobId]);
+    if(prior.rowCount)throw new Error("FINISHED_STOCK_ALREADY_RECEIVED");
+    const variant=await client.query("SELECT pv.id FROM product_variants pv JOIN products p ON p.id=pv.product_id WHERE pv.id=$1 AND p.business_id=$2",[p.data.variantId,req.user.businessId]);
+    if(!variant.rowCount)throw new Error("VARIANT_NOT_FOUND");
+    const inv=await client.query("SELECT id FROM inventory WHERE branch_id=$1 AND variant_id=$2 FOR UPDATE",[req.user.branchId,p.data.variantId]);
+    if(inv.rowCount)await client.query("UPDATE inventory SET quantity=quantity+$1 WHERE branch_id=$2 AND variant_id=$3",[pieces,req.user.branchId,p.data.variantId]);
+    else await client.query("INSERT INTO inventory(id,branch_id,variant_id,quantity,reorder_level) VALUES($1,$2,$3,$4,5)",[crypto.randomUUID(),req.user.branchId,p.data.variantId,pieces]);
+    const movementId=crypto.randomUUID();
+    await client.query("INSERT INTO stock_movements(id,branch_id,variant_id,type,quantity,reason,reference_id) VALUES($1,$2,$3,'production_in',$4,'Finished garment production',$5)",[movementId,req.user.branchId,p.data.variantId,pieces,p.data.jobId]);
+    await client.query("UPDATE cmt_jobs SET status='received' WHERE id=$1",[p.data.jobId]);
+    await client.query("COMMIT");
+    const r=await pool.query("SELECT sm.id,sm.reference_id AS \"jobId\",sm.variant_id AS \"variantId\",p.name AS \"productName\",p.sku,pv.size,pv.color,sm.quantity,sm.created_at AS \"createdAt\" FROM stock_movements sm JOIN product_variants pv ON pv.id=sm.variant_id JOIN products p ON p.id=pv.product_id WHERE sm.id=$1 AND p.business_id=$2",[movementId,req.user.businessId]);
+    res.status(201).json(r.rows[0]);
+  }catch(e){
+    await client.query("ROLLBACK");
+    const code=e instanceof Error?e.message:"FINISHED_STOCK_FAILED";
+    const status=["CMT_JOB_NOT_FOUND","VARIANT_NOT_FOUND"].includes(code)?404:409;
+    res.status(status).json({error:code});
+  }finally{client.release()}
+});
+
 app.get("/api/products",authenticate,requirePermission("products"),async(req,res)=>{
   try{const {rows}=await pool.query("SELECT p.id,p.name,p.sku,p.category_id,v.id AS variant_id,v.size,v.color,v.barcode,v.cost,v.price,COALESCE(i.quantity,0) AS qty,COALESCE(i.reorder_level,5) AS reorder_level,b.name AS brand,sc.name AS sub_category,f.name AS floor,w.name AS warehouse FROM products p LEFT JOIN product_variants v ON v.product_id=p.id LEFT JOIN inventory i ON i.variant_id=v.id AND i.branch_id=$2 LEFT JOIN brands b ON b.id=p.brand_id LEFT JOIN sub_categories sc ON sc.id=p.sub_category_id LEFT JOIN floors f ON f.id=p.floor_id LEFT JOIN warehouses w ON w.id=p.warehouse_id WHERE p.business_id=$1",[req.user.businessId,req.user.branchId]);res.json(rows)}
   catch{res.status(500).json({error:"Unable to load products"})}
