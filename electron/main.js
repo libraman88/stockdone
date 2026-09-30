@@ -82,6 +82,36 @@ app.whenReady().then(() => {
     return db.prepare(sql).all(...params);
   });
   createWindow();
+  setupAutoUpdater();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
+
+function setupAutoUpdater() {
+  if (!app.isPackaged) return;
+  const { autoUpdater } = require("electron-updater");
+  const dbPath = path.join(app.getPath("userData"), "data", "stockdone.sqlite");
+  const backupDir = path.join(app.getPath("userData"), "backups");
+  const backupDatabase = () => {
+    try {
+      if (!fs.existsSync(dbPath)) return;
+      fs.mkdirSync(backupDir, { recursive: true });
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      fs.copyFileSync(dbPath, path.join(backupDir, `stockdone-${stamp}.sqlite`));
+    } catch (error) { console.warn("Update backup failed:", error.message); }
+  };
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on("update-available", () => mainWindow?.webContents.send("app:update-available"));
+  autoUpdater.on("download-progress", (p) => mainWindow?.webContents.send("app:update-progress", p.percent));
+  autoUpdater.on("update-downloaded", () => mainWindow?.webContents.send("app:update-ready"));
+  autoUpdater.on("error", (e) => console.warn("Auto update error:", e.message));
+  ipcMain.handle("app:version", () => app.getVersion());
+  ipcMain.handle("app:check-for-updates", async () => {
+    try { const r = await autoUpdater.checkForUpdates(); return { ok:true, version:r?.updateInfo?.version || null }; }
+    catch (e) { return { ok:false, error:e.message }; }
+  });
+  ipcMain.handle("app:install-update", () => { backupDatabase(); autoUpdater.quitAndInstall(false, true); return {ok:true}; });
+  autoUpdater.checkForUpdatesAndNotify().catch((e) => console.warn("Initial update check failed:", e.message));
+}
+
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
