@@ -14,9 +14,6 @@
     "desktop:win": "npm run build && electron-builder --win nsis --x64 --publish never"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "latest",
-    "vite": "latest",
-    "typescript": "latest",
     "react": "latest",
     "react-dom": "latest",
     "jsbarcode": "^3.11.6",
@@ -30,7 +27,10 @@
     "wait-on": "latest",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "@vitejs/plugin-react": "latest",
+    "vite": "latest",
+    "typescript": "latest"
   },
   "build": {
     "appId": "com.stockdone.pos",
@@ -39,8 +39,7 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "package.json",
-      "node_modules/**/*"
+      "package.json"
     ],
     "asarUnpack": [
       "node_modules/better-sqlite3/**"
