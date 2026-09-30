@@ -61,7 +61,7 @@ function GarmentProduction(){
  const [m,setM]=useState({name:"",supplierId:"",unit:"meter",quantity:0,cost:0,location:""});
  const [l,setL]=useState({rawMaterialId:"",lotNumber:"",meterQuantity:0,cost:0,location:""});
  const [j,setJ]=useState({supplierId:"",fabricLotId:"",metersSent:0,piecesReceived:0,status:"open" as "open"|"sent"|"received"|"closed",notes:""});
- const load=async()=>{try{const [a,b,c,d]=await Promise.all([getRawMaterials(),getFabricLots(),getCmtJobs(),getSuppliers()]);setMaterials(a);setLots(b);setJobs(c);setSuppliers(d)}catch(e){alert(e instanceof Error?e.message:"Garment production could not be loaded.")}};
+ const load=async()=>{try{const [a,b,c,d]=await Promise.all([getRawMaterials(),getFabricLots(),getCmtJobs(),apiGetSuppliers()]);setMaterials(a);setLots(b);setJobs(c);setSuppliers(d)}catch(e){alert(e instanceof Error?e.message:"Garment production could not be loaded.")}};
  useEffect(()=>{void load()},[]);
  const addMaterial=async()=>{if(!m.name.trim())return;setBusy(true);try{await createRawMaterial({...m,supplierId:m.supplierId||null});setM({name:"",supplierId:"",unit:"meter",quantity:0,cost:0,location:""});await load()}catch(e){alert(e instanceof Error?e.message:"Could not save raw material.")}finally{setBusy(false)}};
  const addLot=async()=>{if(!l.rawMaterialId||!l.lotNumber.trim())return;setBusy(true);try{await createFabricLot({...l});setL({rawMaterialId:"",lotNumber:"",meterQuantity:0,cost:0,location:""});await load()}catch(e){alert(e instanceof Error?e.message:"Could not save fabric lot.")}finally{setBusy(false)}};
