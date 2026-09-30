@@ -31,7 +31,7 @@ function loadSqlite() {
     db = new Database(path.join(dbDir, "stockdone.sqlite"));
     db.pragma("journal_mode = WAL");
     db.pragma("foreign_keys = ON");
-    db.transaction(() => OFFLINE_SCHEMA.forEach((sql) => db.prepare(sql).run()))();
+    db.transaction(() => { OFFLINE_SCHEMA.forEach((sql) => db.prepare(sql).run()); const cols = db.prepare("PRAGMA table_info(products)").all(); const names = new Set(cols.map(c => c.name)); for (const [name,type] of [["brand","TEXT"],["sub_category","TEXT"],["floor","TEXT"],["warehouse","TEXT"]]) { if (!names.has(name)) db.prepare(`ALTER TABLE products ADD COLUMN ${name} ${type}`).run(); } })();
     return db;
   } catch (error) {
     console.warn("SQLite unavailable; app can continue in browser/API mode.", error.message);
