@@ -81,3 +81,11 @@ CREATE INDEX IF NOT EXISTS idx_sqlite_stock_product_date ON stock_movements(prod
 CREATE INDEX IF NOT EXISTS idx_sqlite_sync_status ON sync_queue(status);
 CREATE INDEX IF NOT EXISTS idx_sqlite_sync_entity ON sync_queue(entity,entity_id);
 CREATE INDEX IF NOT EXISTS idx_sqlite_conflict_status ON sync_conflicts(resolution);
+
+CREATE TABLE IF NOT EXISTS brands (id TEXT PRIMARY KEY,business_id TEXT NOT NULL,name TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS sub_categories (id TEXT PRIMARY KEY,business_id TEXT NOT NULL,category_id TEXT,name TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS floors (id TEXT PRIMARY KEY,business_id TEXT NOT NULL,name TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS warehouses (id TEXT PRIMARY KEY,business_id TEXT NOT NULL,name TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS raw_materials (id TEXT PRIMARY KEY,business_id TEXT NOT NULL,name TEXT NOT NULL,supplier_id TEXT,unit TEXT NOT NULL DEFAULT 'meter',quantity REAL NOT NULL DEFAULT 0,cost REAL NOT NULL DEFAULT 0,location TEXT,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS fabric_lots (id TEXT PRIMARY KEY,business_id TEXT NOT NULL,raw_material_id TEXT NOT NULL,lot_number TEXT NOT NULL,meter_quantity REAL NOT NULL DEFAULT 0,cost REAL NOT NULL DEFAULT 0,location TEXT,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS cmt_jobs (id TEXT PRIMARY KEY,business_id TEXT NOT NULL,supplier_id TEXT,fabric_lot_id TEXT,meters_sent REAL NOT NULL DEFAULT 0,pieces_received INTEGER NOT NULL DEFAULT 0,job_date TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'open',notes TEXT);
