@@ -33,6 +33,8 @@
     "typescript": "latest"
   },
   "build": {
+    "compression": "maximum",
+    "electronLanguages": ["en-US"],
     "appId": "com.stockdone.pos",
     "productName": "StockDone",
     "asar": true,
