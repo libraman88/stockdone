@@ -35,3 +35,16 @@ CREATE INDEX IF NOT EXISTS idx_return_payments_return ON return_payments(return_
 CREATE TABLE IF NOT EXISTS audit_logs (id UUID PRIMARY KEY,business_id UUID NOT NULL REFERENCES businesses(id),user_id UUID REFERENCES users(id),action TEXT NOT NULL,entity TEXT,entity_id UUID,details JSONB,ip_address INET,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
 CREATE INDEX IF NOT EXISTS idx_audit_logs_business_date ON audit_logs(business_id,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity,entity_id,created_at DESC);
+
+-- Garment master data and production tracking
+CREATE TABLE IF NOT EXISTS brands (id UUID PRIMARY KEY,business_id UUID NOT NULL REFERENCES businesses(id),name TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(business_id,name));
+CREATE TABLE IF NOT EXISTS sub_categories (id UUID PRIMARY KEY,business_id UUID NOT NULL REFERENCES businesses(id),category_id UUID REFERENCES categories(id),name TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(business_id,name));
+CREATE TABLE IF NOT EXISTS floors (id UUID PRIMARY KEY,business_id UUID NOT NULL REFERENCES businesses(id),name TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(business_id,name));
+CREATE TABLE IF NOT EXISTS warehouses (id UUID PRIMARY KEY,business_id UUID NOT NULL REFERENCES businesses(id),name TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(business_id,name));
+ALTER TABLE products ADD COLUMN IF NOT EXISTS brand_id UUID REFERENCES brands(id);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS sub_category_id UUID REFERENCES sub_categories(id);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS floor_id UUID REFERENCES floors(id);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS warehouse_id UUID REFERENCES warehouses(id);
+CREATE TABLE IF NOT EXISTS raw_materials (id UUID PRIMARY KEY,business_id UUID NOT NULL REFERENCES businesses(id),name TEXT NOT NULL,supplier_id UUID REFERENCES suppliers(id),unit TEXT NOT NULL DEFAULT 'meter',quantity NUMERIC(12,3) NOT NULL DEFAULT 0,cost NUMERIC(12,2) NOT NULL DEFAULT 0,location TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS fabric_lots (id UUID PRIMARY KEY,business_id UUID NOT NULL REFERENCES businesses(id),raw_material_id UUID NOT NULL REFERENCES raw_materials(id),lot_number TEXT NOT NULL,meter_quantity NUMERIC(12,3) NOT NULL DEFAULT 0,cost NUMERIC(12,2) NOT NULL DEFAULT 0,location TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(business_id,lot_number));
+CREATE TABLE IF NOT EXISTS cmt_jobs (id UUID PRIMARY KEY,business_id UUID NOT NULL REFERENCES businesses(id),supplier_id UUID REFERENCES suppliers(id),fabric_lot_id UUID REFERENCES fabric_lots(id),meters_sent NUMERIC(12,3) NOT NULL DEFAULT 0,pieces_received INTEGER NOT NULL DEFAULT 0,job_date TIMESTAMPTZ NOT NULL DEFAULT now(),status TEXT NOT NULL DEFAULT 'open',notes TEXT);
