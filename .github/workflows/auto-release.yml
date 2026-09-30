@@ -37,16 +37,14 @@ jobs:
           "VERSION=v$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "VERSION_NUMBER=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Commit version and tag release
+      - name: Commit version
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package.json
           git commit -m "chore: release $env:VERSION_NUMBER [skip ci]"
-          git tag -a "$env:VERSION" -m "StockDone $env:VERSION"
           git push origin HEAD:main
-          git push origin "$env:VERSION"
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
