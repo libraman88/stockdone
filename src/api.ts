@@ -215,13 +215,45 @@ export function reconcileOfflineStock(items:{variantId:string;quantity:number}[]
 export type RawMaterial={id:string;name:string;supplierId:string|null;supplier?:string|null;unit:string;quantity:number;cost:number;location:string|null;created_at:string};
 export type FabricLot={id:string;rawMaterialId:string;rawMaterial?:string;lotNumber:string;meterQuantity:number;cost:number;location:string|null;created_at:string};
 export type CmtJob={id:string;supplierId:string|null;supplier?:string|null;fabricLotId:string|null;lotNumber?:string|null;metersSent:number;piecesReceived:number;jobDate:string;status:"open"|"sent"|"received"|"closed";notes:string|null;created_at:string};
-export function getRawMaterials(){return apiRequest<RawMaterial[]>("/garments/raw-materials");}
+export async function getRawMaterials(){
+  try{return await apiRequest<RawMaterial[]>("/garments/raw-materials");}
+  catch(error){
+    if(!electronOffline()||!isNetworkFailure(error))throw error;
+    await offlineExec("CREATE TABLE IF NOT EXISTS raw_materials (id TEXT PRIMARY KEY,name TEXT NOT NULL,supplier_id TEXT,unit TEXT NOT NULL,quantity REAL NOT NULL DEFAULT 0,cost REAL NOT NULL DEFAULT 0,location TEXT,created_at TEXT NOT NULL)");
+    return offlineQuery<RawMaterial>("SELECT id,name,supplier_id AS supplierId,NULL AS supplier,unit,quantity,cost,location,created_at FROM raw_materials ORDER BY name");
+  }
+}
+
 export function createRawMaterial(input:{name:string;supplierId?:string|null;unit:string;quantity:number;cost:number;location?:string|null}){return apiRequest<RawMaterial>("/garments/raw-materials",{method:"POST",body:JSON.stringify(input)});}
-export function getFabricLots(){return apiRequest<FabricLot[]>("/garments/fabric-lots");}
+export async function getFabricLots(){
+  try{return await apiRequest<FabricLot[]>("/garments/fabric-lots");}
+  catch(error){
+    if(!electronOffline()||!isNetworkFailure(error))throw error;
+    await offlineExec("CREATE TABLE IF NOT EXISTS fabric_lots (id TEXT PRIMARY KEY,raw_material_id TEXT NOT NULL,lot_number TEXT NOT NULL,meter_quantity REAL NOT NULL DEFAULT 0,cost REAL NOT NULL DEFAULT 0,location TEXT,created_at TEXT NOT NULL)");
+    return offlineQuery<FabricLot>("SELECT fl.id,fl.raw_material_id AS rawMaterialId,rm.name AS rawMaterial,fl.lot_number AS lotNumber,fl.meter_quantity AS meterQuantity,fl.cost,fl.location,fl.created_at FROM fabric_lots fl LEFT JOIN raw_materials rm ON rm.id=fl.raw_material_id ORDER BY fl.created_at DESC");
+  }
+}
+
 export function createFabricLot(input:{rawMaterialId:string;lotNumber:string;meterQuantity:number;cost:number;location?:string|null}){return apiRequest<FabricLot>("/garments/fabric-lots",{method:"POST",body:JSON.stringify(input)});}
-export function getCmtJobs(){return apiRequest<CmtJob[]>("/garments/cmt-jobs");}
+export async function getCmtJobs(){
+  try{return await apiRequest<CmtJob[]>("/garments/cmt-jobs");}
+  catch(error){
+    if(!electronOffline()||!isNetworkFailure(error))throw error;
+    await offlineExec("CREATE TABLE IF NOT EXISTS cmt_jobs (id TEXT PRIMARY KEY,supplier_id TEXT,fabric_lot_id TEXT,meters_sent REAL NOT NULL DEFAULT 0,pieces_received INTEGER NOT NULL DEFAULT 0,job_date TEXT NOT NULL,status TEXT NOT NULL,notes TEXT,created_at TEXT NOT NULL)");
+    return offlineQuery<CmtJob>("SELECT j.id,j.supplier_id AS supplierId,s.name AS supplier,j.fabric_lot_id AS fabricLotId,fl.lot_number AS lotNumber,j.meters_sent AS metersSent,j.pieces_received AS piecesReceived,j.job_date AS jobDate,j.status,j.notes,j.created_at FROM cmt_jobs j LEFT JOIN suppliers s ON s.id=j.supplier_id LEFT JOIN fabric_lots fl ON fl.id=j.fabric_lot_id ORDER BY j.created_at DESC");
+  }
+}
+
 export function createCmtJob(input:{supplierId?:string|null;fabricLotId?:string|null;metersSent:number;piecesReceived:number;jobDate?:string;status:CmtJob["status"];notes?:string|null}){return apiRequest<CmtJob>("/garments/cmt-jobs",{method:"POST",body:JSON.stringify(input)} );}
 export function updateCmtJob(id:string,input:{status:CmtJob["status"];piecesReceived?:number;notes?:string|null}){return apiRequest<CmtJob>("/garments/cmt-jobs/"+id,{method:"PUT",body:JSON.stringify(input)});}
 export type FinishedStockReceipt={id:string;jobId:string;variantId:string;productName:string;sku:string;size:string|null;color:string|null;quantity:number;createdAt:string};
 export function receiveFinishedStock(input:{jobId:string;variantId:string}){return apiRequest<FinishedStockReceipt>("/garments/finished-stock",{method:"POST",body:JSON.stringify(input)});}
-export function getFinishedStock(){return apiRequest<FinishedStockReceipt[]>("/garments/finished-stock");}
+export async function getFinishedStock(){
+  try{return await apiRequest<FinishedStockReceipt[]>("/garments/finished-stock");}
+  catch(error){
+    if(!electronOffline()||!isNetworkFailure(error))throw error;
+    await offlineExec("CREATE TABLE IF NOT EXISTS finished_stock_receipts (id TEXT PRIMARY KEY,job_id TEXT NOT NULL,variant_id TEXT NOT NULL,quantity INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL)");
+    return offlineQuery<FinishedStockReceipt>("SELECT r.id,r.job_id AS jobId,r.variant_id AS variantId,p.name AS productName,p.sku,p.size,p.color,r.quantity,r.created_at AS createdAt FROM finished_stock_receipts r LEFT JOIN products p ON p.id=r.variant_id ORDER BY r.created_at DESC");
+  }
+}
+
