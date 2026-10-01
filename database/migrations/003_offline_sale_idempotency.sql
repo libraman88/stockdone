@@ -1,0 +1,2 @@
+-- Deprecated duplicate migration.
+-- Use database/migrations/003_offline_idempotency.sql instead.
