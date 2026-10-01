@@ -282,7 +282,14 @@ export async function getAdminPermissions(){
 export function createAdminRole(input:{name:string;permissionCodes:string[]}){return apiRequest<AdminRole>("/admin/roles",{method:"POST",body:JSON.stringify(input)});}
 export function updateAdminRolePermissions(id:string,permissionCodes:string[]){return apiRequest<{ok:boolean}>(`/admin/roles/${id}/permissions`,{method:"PUT",body:JSON.stringify({permissionCodes})});}
 export type AuditLog={id:string;user_id:string|null;action:string;entity:string;entity_id:string|null;details:any;created_at:string};
-export function getAuditLogs(){return apiRequest<AuditLog[]>("/audit-logs");}
+export async function getAuditLogs(){
+  try{return await apiRequest<AuditLog[]>("/audit-logs");}
+  catch(error){
+    if(!electronOffline()||!isNetworkFailure(error))throw error;
+    await offlineExec("CREATE TABLE IF NOT EXISTS audit_logs (id TEXT PRIMARY KEY,user_id TEXT,action TEXT NOT NULL,entity TEXT NOT NULL,entity_id TEXT,details TEXT,created_at TEXT NOT NULL)");
+    return offlineQuery<any>("SELECT id,user_id,action,entity,entity_id,details,created_at FROM audit_logs ORDER BY created_at DESC LIMIT 200").then(rows=>rows.map(r=>({...r,details:r.details?JSON.parse(r.details):null})));
+  }
+}
 export type AdminUser={id:string;username:string;name:string;role:"owner"|"manager"|"cashier";active:boolean;created_at:string};
 export function getAdminUsers(){return apiRequest<AdminUser[]>("/admin/users");}
 export function createAdminUser(input:{username:string;name:string;role:"manager"|"cashier";password:string}){return apiRequest<AdminUser>("/admin/users",{method:"POST",body:JSON.stringify(input)});}
