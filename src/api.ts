@@ -248,7 +248,18 @@ export async function getKhataReport(){
 
 export type AdminRole={id:string;name:string;permissions:string[]};
 export type AdminPermission={code:string;description:string};
-export function getAdminRoles(){return apiRequest<AdminRole[]>("/admin/roles");}
+export async function getAdminRoles(){
+  try{return await apiRequest<AdminRole[]>("/admin/roles");}
+  catch(error){
+    if(!electronOffline()||!isNetworkFailure(error))throw error;
+    const permissions=["admin","customers","inventory","products","purchases","reports","returns","sales","settings","users"];
+    return [
+      {id:"offline-owner",name:"owner",permissions},
+      {id:"offline-manager",name:"manager",permissions:["sales","products","inventory","purchases","customers","returns","reports"]},
+      {id:"offline-cashier",name:"cashier",permissions:["sales","customers"]}
+    ];
+  }
+}
 export async function getAdminPermissions(){
   try{return await apiRequest<AdminPermission[]>("/admin/permissions");}
   catch(error){
