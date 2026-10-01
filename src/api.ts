@@ -66,7 +66,8 @@ async function offlineExec(sql:string, params:unknown[]=[]):Promise<void> {
   if (!bridge) throw new Error("Offline database unavailable.");
   await bridge.exec(sql, params);
 }
-\nexport async function getProducts() {
+
+export async function getProducts() {
   try {
     const rows = await apiRequest<Product[]>("/products");
     return rows.map((p: any) => ({...p, variantId: p.variantId || p.variant_id, reorderLevel: Number(p.reorderLevel ?? p.reorder_level ?? 5), qty: Number(p.qty ?? 0), cost: Number(p.cost ?? 0), price: Number(p.price ?? 0)}));
