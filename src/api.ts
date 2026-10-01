@@ -1,6 +1,6 @@
 import type { Product } from "./types";
 
-const configuredApiUrl = String(import.meta.env.VITE_API_URL || "").trim().replace(/\\/$/, "");
+const configuredApiUrl = String(import.meta.env.VITE_API_URL || "").trim().replace(/\/$/, "");
 const runningInElectron = typeof window !== "undefined" && Boolean((window as Window & { stockDoneOffline?: unknown }).stockDoneOffline);
 const browserApiUrl = typeof window !== "undefined" && window.location.hostname !== "localhost" ? "/api" : "http://localhost:4000/api";
 
