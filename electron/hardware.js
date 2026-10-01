@@ -1,3 +1,0 @@
-function normalizeScan(value){return String(value||"").trim().replace(/[\r\n]+$/,"")}
-function printHtml(win,html){return new Promise((resolve,reject)=>{const w=require("electron").BrowserWindow.fromWebContents(win.webContents);const printWin=new (require("electron").BrowserWindow)({show:false,webPreferences:{contextIsolation:true}});printWin.loadURL("data:text/html;charset=utf-8,"+encodeURIComponent(html)).then(()=>printWin.webContents.print({silent:false,printBackground:true},(ok,reason)=>{printWin.close();ok?resolve(true):reject(new Error(reason||"Print failed"))}))})}
-module.exports={normalizeScan,printHtml};

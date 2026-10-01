@@ -88,6 +88,44 @@ app.post("/api/garments/finished-stock",authenticate,requirePermission("inventor
   }finally{client.release()}
 });
 
+// Master data endpoints
+const masterTypes = {
+  categories: { table: "categories", permission: "products" },
+  brands: { table: "brands", permission: "products" },
+  subCategories: { table: "sub_categories", permission: "products" },
+  floors: { table: "floors", permission: "products" },
+  warehouses: { table: "warehouses", permission: "products" }
+} as const;
+app.get("/api/master-data",authenticate,requirePermission("products"),async(req,res)=>{
+  try{
+    const type=String(req.query.type||"") as keyof typeof masterTypes;
+    const meta=masterTypes[type];
+    if(!meta)return res.status(400).json({error:"Invalid master type"});
+    const {rows}=await pool.query(`SELECT id,name,TRUE AS active FROM ${meta.table} WHERE business_id=$1 ORDER BY name`,[req.user.businessId]);
+    res.json(rows);
+  }catch{res.status(500).json({error:"Unable to load master data"})}
+});
+app.post("/api/master-data",authenticate,requirePermission("products"),async(req,res)=>{
+  try{
+    const type=String(req.body?.type||"") as keyof typeof masterTypes;
+    const meta=masterTypes[type]; const name=String(req.body?.name||"").trim();
+    if(!meta||!name)return res.status(400).json({error:"Invalid master data"});
+    const id=crypto.randomUUID();
+    if(type==="subCategories"){
+      const categoryId=req.body?.categoryId||null;
+      await pool.query("INSERT INTO sub_categories(id,business_id,category_id,name) VALUES($1,$2,$3,$4)",[id,req.user.businessId,categoryId,name]);
+    }else await pool.query(`INSERT INTO ${meta.table}(id,business_id,name) VALUES($1,$2,$3)`,[id,req.user.businessId,name]);
+    res.status(201).json({id,name,active:true});
+  }catch(e){res.status(409).json({error:"Master item already exists or could not be created"})}
+});
+app.put("/api/master-data/:type/:id",authenticate,requirePermission("products"),async(req,res)=>{
+  try{
+    const type=String(req.params.type) as keyof typeof masterTypes; const meta=masterTypes[type]; const name=String(req.body?.name||"").trim();
+    if(!meta||!name)return res.status(400).json({error:"Invalid master data"});
+    const r=await pool.query(`UPDATE ${meta.table} SET name=$1 WHERE id=$2 AND business_id=$3 RETURNING id,name`,[name,req.params.id,req.user.businessId]);
+    if(!r.rowCount)return res.status(404).json({error:"Master item not found"}); res.json({...r.rows[0],active:true});
+  }catch{res.status(409).json({error:"Master item could not be updated"})}
+});
 app.get("/api/products",authenticate,requirePermission("products"),async(req,res)=>{
   try{const {rows}=await pool.query("SELECT p.id,p.name,p.sku,p.category_id,v.id AS variant_id,v.size,v.color,v.barcode,v.cost,v.price,COALESCE(i.quantity,0) AS qty,COALESCE(i.reorder_level,5) AS reorder_level,b.name AS brand,sc.name AS sub_category,f.name AS floor,w.name AS warehouse FROM products p LEFT JOIN product_variants v ON v.product_id=p.id LEFT JOIN inventory i ON i.variant_id=v.id AND i.branch_id=$2 LEFT JOIN brands b ON b.id=p.brand_id LEFT JOIN sub_categories sc ON sc.id=p.sub_category_id LEFT JOIN floors f ON f.id=p.floor_id LEFT JOIN warehouses w ON w.id=p.warehouse_id WHERE p.business_id=$1",[req.user.businessId,req.user.branchId]);res.json(rows)}
   catch{res.status(500).json({error:"Unable to load products"})}
