@@ -37,7 +37,7 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
 export function requestPasswordReset(username:string){return apiRequest<{ok:boolean;message:string}>("/auth/password-reset/request",{method:"POST",body:JSON.stringify({username})});}
 export function confirmPasswordReset(token:string,password:string){return apiRequest<{ok:boolean}>("/auth/password-reset/confirm",{method:"POST",body:JSON.stringify({token,password})});}
 export type AuthSession={id:string;created_at:string;expires_at:string;revoked_at:string|null};
-export function getAuthSessions(){return apiRequest<AuthSession[]>("/auth/sessions");}
+export async function getAuthSessions(){try{return await apiRequest<AuthSession[]>("/auth/sessions");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const s=authStorage.getSession();if(!s)return [];const now=new Date();const expires=new Date(now.getTime()+30*24*60*60*1000);return [{id:"offline-session",created_at:now.toISOString(),expires_at:expires.toISOString(),revoked_at:null}];}}
 export function logout(){return apiRequest<{ok:boolean}>("/auth/logout",{method:"POST"}).finally(()=>setApiToken(null));}
 export function logoutAll(){return apiRequest<{ok:boolean}>("/auth/logout-all",{method:"POST"}).finally(()=>setApiToken(null));}
 
@@ -293,7 +293,7 @@ export async function getAuditLogs(){
   }
 }
 export type AdminUser={id:string;username:string;name:string;role:"owner"|"manager"|"cashier";active:boolean;created_at:string};
-export function getAdminUsers(){return apiRequest<AdminUser[]>("/admin/users");}
+export async function getAdminUsers(){try{return await apiRequest<AdminUser[]>("/admin/users");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;return authStorage.getUsers().map(u=>({id:u.id,username:u.username,name:u.name,role:u.role,active:u.active,created_at:new Date().toISOString()}));}}
 export function createAdminUser(input:{username:string;name:string;role:"manager"|"cashier";password:string}){return apiRequest<AdminUser>("/admin/users",{method:"POST",body:JSON.stringify(input)});}
 export function setAdminUserStatus(id:string,active:boolean){return apiRequest<AdminUser>(`/admin/users/${id}/status`,{method:"PATCH",body:JSON.stringify({active})});}
 export function setAdminUserPassword(id:string,password:string){return apiRequest<{ok:boolean}>(`/admin/users/${id}/password`,{method:"PATCH",body:JSON.stringify({password})});}
@@ -307,8 +307,8 @@ export function adjustInventory(input:{variantId:string;quantityDelta:number;rea
 export function createStockTransfer(input:{toBranchId:string;items:{variantId:string;quantity:number}[]}){return apiRequest<{id:string;status:string}>("/inventory/transfers",{method:"POST",body:JSON.stringify(input)});}
 
 export type Branch={id:string;name:string;code:string};
-export function getBranches(){return apiRequest<Branch[]>("/branches");}
-export function createBranch(input:{name:string;code:string}){return apiRequest<Branch>("/branches",{method:"POST",body:JSON.stringify(input)});}
+export async function getBranches(){try{return await apiRequest<Branch[]>("/branches");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;return JSON.parse(localStorage.getItem("stockdone.branches")||"[]");}}
+export async function createBranch(input:{name:string;code:string}){try{return await apiRequest<Branch>("/branches",{method:"POST",body:JSON.stringify(input)});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const b={id:crypto.randomUUID(),name:input.name,code:input.code};const rows:Branch[]=JSON.parse(localStorage.getItem("stockdone.branches")||"[]");localStorage.setItem("stockdone.branches",JSON.stringify([...rows,b]));return b;}}
 export function receiveStockTransfer(id:string){return apiRequest<{id:string;status:string}>(`/inventory/transfers/${id}/receive`,{method:"POST"});}
 
 export function getStockTransfers(){return apiRequest<any[]>("/inventory/transfers");}
