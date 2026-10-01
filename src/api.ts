@@ -111,15 +111,38 @@ export function createReturn(input:{saleId:string;type:"return"|"exchange";refun
 export async function getSales(){try{return await apiRequest<any[]>("/sales");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const rows=await offlineQuery<any>("SELECT id,invoice_no,client_reference,total,payment_method,discount,customer_id,status,created_at FROM sales ORDER BY created_at DESC");const items=await offlineQuery<any>("SELECT si.sale_id,si.product_id,si.qty,si.price,p.name,p.sku,p.size,p.color FROM sale_items si LEFT JOIN products p ON p.id=si.product_id ORDER BY si.id");return rows.map((s:any)=>({id:s.id,invoiceNo:s.invoice_no,total:Number(s.total),paymentMethod:s.payment_method,discount:Number(s.discount),customerId:s.customer_id,createdAt:s.created_at,status:s.status,items:items.filter((i:any)=>i.sale_id===s.id).map((i:any)=>({id:i.product_id,productId:i.product_id,variantId:i.product_id,qty:Number(i.qty),price:Number(i.price),name:i.name,sku:i.sku,size:i.size,color:i.color}))}));}}
 
 export type ReportSummary={sales:{invoices:number;sales_total:number;discounts:number};profit:{gross_profit:number};inventory:{variants:number;units:number;cost_value:number;retail_value:number};lowStock:Array<{name:string;sku:string;size:string|null;color:string|null;quantity:number;reorder_level:number}>};
-export function getReportSummary(from:string,to:string){return apiRequest<ReportSummary>(`/reports/summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
+export async function getReportSummary(from:string,to:string){
+  try{return await apiRequest<ReportSummary>(`/reports/summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
+  catch(error){
+    if(!electronOffline()||!isNetworkFailure(error))throw error;
+    const sales=await offlineQuery<any>(`SELECT COUNT(*) AS invoices,COALESCE(SUM(total),0) AS sales_total,COALESCE(SUM(discount),0) AS discounts FROM sales WHERE substr(created_at,1,10) BETWEEN ? AND ?`,[from,to]);
+    const profit=await offlineQuery<any>(`SELECT COALESCE(SUM((si.price-si.unit_cost)*si.qty),0)-COALESCE((SELECT SUM(discount) FROM sales WHERE substr(created_at,1,10) BETWEEN ? AND ?),0) AS gross_profit FROM sale_items si JOIN sales s ON s.id=si.sale_id WHERE substr(s.created_at,1,10) BETWEEN ? AND ?`,[from,to,from,to]);
+    const inventory=await offlineQuery<any>(`SELECT COUNT(*) AS variants,COALESCE(SUM(qty),0) AS units,COALESCE(SUM(qty*cost),0) AS cost_value,COALESCE(SUM(qty*price),0) AS retail_value FROM products`);
+    const lowStock=await offlineQuery<any>(`SELECT name,sku,size,color,qty AS quantity,reorder_level FROM products WHERE qty<=reorder_level ORDER BY name`);
+    return {sales:{invoices:Number(sales[0]?.invoices||0),sales_total:Number(sales[0]?.sales_total||0),discounts:Number(sales[0]?.discounts||0)},profit:{gross_profit:Number(profit[0]?.gross_profit||0)},inventory:{variants:Number(inventory[0]?.variants||0),units:Number(inventory[0]?.units||0),cost_value:Number(inventory[0]?.cost_value||0),retail_value:Number(inventory[0]?.retail_value||0)},lowStock} as ReportSummary;
+  }
+}
 export type DashboardSummary=ReportSummary;
 export function getDashboardSummary(from:string,to:string){return getReportSummary(from,to);}
 
 export type DailySalesReport={date:string;invoices:number;total:number;discounts:number};
 export type RecentSale={id:string;invoice_no:string;total:number;payment_method:string;created_at:string;customer:string};
 export type TopProduct={name:string;sku:string;units:number;sales:number};
-export function getDashboardRecent(){return apiRequest<RecentSale[]>("/dashboard/recent");}
-export function getDashboardTopProducts(){return apiRequest<TopProduct[]>("/dashboard/top-products");}
+export async function getDashboardRecent(){
+  try{return await apiRequest<RecentSale[]>("/dashboard/recent");}
+  catch(error){
+    if(!electronOffline()||!isNetworkFailure(error))throw error;
+    return (await offlineQuery<any>(`SELECT s.id,s.invoice_no,s.total,s.payment_method,s.created_at,COALESCE(c.name,'Walk-in') AS customer FROM sales s LEFT JOIN customers c ON c.id=s.customer_id ORDER BY s.created_at DESC LIMIT 10`)).map((x:any)=>({...x,total:Number(x.total)})) as RecentSale[];
+  }
+}
+export async function getDashboardTopProducts(){
+  try{return await apiRequest<TopProduct[]>("/dashboard/top-products");}
+  catch(error){
+    if(!electronOffline()||!isNetworkFailure(error))throw error;
+    return (await offlineQuery<any>(`SELECT p.name,p.sku,COALESCE(SUM(si.qty),0) AS units,COALESCE(SUM(si.qty*si.price),0) AS sales FROM sale_items si JOIN sales s ON s.id=si.sale_id JOIN products p ON p.id=si.product_id WHERE substr(s.created_at,1,10)=? GROUP BY p.id,p.name,p.sku ORDER BY sales DESC LIMIT 10`,[new Date().toISOString().slice(0,10)])).map((x:any)=>({...x,units:Number(x.units),sales:Number(x.sales)})) as TopProduct[];
+  }
+}
+
 export type PaymentReport={method:string;invoices:number;total:number};
 export type ProductReport={name:string;sku:string;size:string|null;color:string|null;units:number;sales:number;cost:number;gross_profit:number};
 export function getSalesReport(from:string,to:string){return apiRequest<{daily:DailySalesReport[];payments:PaymentReport[]}>(`/reports/sales?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
