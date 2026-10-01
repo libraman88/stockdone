@@ -164,7 +164,24 @@ export async function getPaymentReport(from:string,to:string){
   }
 }
 export type ReturnProfitImpact={returned_sales:number;returned_cost:number;exchange_sales:number;exchange_cost:number;transactions:number;net_sales_impact:number;gross_profit_impact:number};
-export function getReturnProfitImpact(from:string,to:string){return apiRequest<ReturnProfitImpact>(`/reports/profit-returns?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
+export async function getReturnProfitImpact(from:string,to:string){
+  try{return await apiRequest<ReturnProfitImpact>(`/reports/profit-returns?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
+  catch(error){
+    if(!electronOffline()||!isNetworkFailure(error))throw error;
+    await offlineExec("CREATE TABLE IF NOT EXISTS returns (id TEXT PRIMARY KEY,type TEXT NOT NULL,sale_id TEXT NOT NULL,refund_amount REAL NOT NULL DEFAULT 0,price_difference REAL NOT NULL DEFAULT 0,business_id TEXT,branch_id TEXT,created_at TEXT NOT NULL)");
+    await offlineExec("CREATE TABLE IF NOT EXISTS return_items (id TEXT PRIMARY KEY,return_id TEXT NOT NULL,variant_id TEXT NOT NULL,quantity INTEGER NOT NULL,direction TEXT NOT NULL,unit_price REAL NOT NULL DEFAULT 0,unit_cost REAL NOT NULL DEFAULT 0,created_at TEXT NOT NULL)");
+    const rows=await offlineQuery<any>(`SELECT COALESCE(SUM(CASE WHEN ri.direction='in' THEN ri.quantity*ri.unit_price ELSE 0 END),0) AS returned_sales,
+      COALESCE(SUM(CASE WHEN ri.direction='in' THEN ri.quantity*ri.unit_cost ELSE 0 END),0) AS returned_cost,
+      COALESCE(SUM(CASE WHEN ri.direction='out' THEN ri.quantity*ri.unit_price ELSE 0 END),0) AS exchange_sales,
+      COALESCE(SUM(CASE WHEN ri.direction='out' THEN ri.quantity*ri.unit_cost ELSE 0 END),0) AS exchange_cost,
+      COUNT(DISTINCT r.id) AS transactions
+      FROM returns r JOIN return_items ri ON ri.return_id=r.id
+      WHERE substr(r.created_at,1,10)>=? AND substr(r.created_at,1,10)<=?`,[from,to]);
+    const x=rows[0]||{};
+    const returnedSales=Number(x.returned_sales||0),returnedCost=Number(x.returned_cost||0),exchangeSales=Number(x.exchange_sales||0),exchangeCost=Number(x.exchange_cost||0);
+    return {returned_sales:returnedSales,returned_cost:returnedCost,exchange_sales:exchangeSales,exchange_cost:exchangeCost,transactions:Number(x.transactions||0),net_sales_impact:exchangeSales-returnedSales,gross_profit_impact:(returnedSales-returnedCost)-(exchangeSales-exchangeCost)};
+  }
+}
 export type ProfitReport={summary:{invoices:number;gross_sales:number;discounts:number;net_sales:number;cogs:number;gross_profit:number;margin_percent:number};daily:Array<Record<string,unknown>>};
 export async function getProfitReport(from:string,to:string){
   try{return await apiRequest<ProfitReport>(`/reports/profit?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
