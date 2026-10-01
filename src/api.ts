@@ -249,7 +249,25 @@ export async function getKhataReport(){
 export type AdminRole={id:string;name:string;permissions:string[]};
 export type AdminPermission={code:string;description:string};
 export function getAdminRoles(){return apiRequest<AdminRole[]>("/admin/roles");}
-export function getAdminPermissions(){return apiRequest<AdminPermission[]>("/admin/permissions");}
+export async function getAdminPermissions(){
+  try{return await apiRequest<AdminPermission[]>("/admin/permissions");}
+  catch(error){
+    if(!electronOffline()||!isNetworkFailure(error))throw error;
+    return [
+      {code:"admin",description:"Administrative actions"},
+      {code:"customers",description:"Manage customers and khata"},
+      {code:"inventory",description:"Manage inventory"},
+      {code:"products",description:"Manage products"},
+      {code:"purchases",description:"Manage purchases"},
+      {code:"reports",description:"View reports"},
+      {code:"returns",description:"Process returns and exchanges"},
+      {code:"sales",description:"Create and manage sales"},
+      {code:"settings",description:"Manage system settings"},
+      {code:"users",description:"Manage users and roles"},
+      {code:"print",description:"Print receipts and documents"}
+    ];
+  }
+}
 export function createAdminRole(input:{name:string;permissionCodes:string[]}){return apiRequest<AdminRole>("/admin/roles",{method:"POST",body:JSON.stringify(input)});}
 export function updateAdminRolePermissions(id:string,permissionCodes:string[]){return apiRequest<{ok:boolean}>(`/admin/roles/${id}/permissions`,{method:"PUT",body:JSON.stringify({permissionCodes})});}
 export type AuditLog={id:string;user_id:string|null;action:string;entity:string;entity_id:string|null;details:any;created_at:string};
