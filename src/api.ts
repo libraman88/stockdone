@@ -379,3 +379,5 @@ export async function getFinishedStock(){
   }
 }
 
+
+export type MasterType={id:string;name:string;label:string;active:boolean;builtin?:boolean};export type MasterItem={id:string;name:string;active:boolean;categoryId?:string|null};export const getMasterTypes=()=>apiRequest<MasterType[]>("/master-data/types");export const createMasterType=(label:string)=>apiRequest<MasterType>("/master-data/types",{method:"POST",body:JSON.stringify({label})});export const getMasterData=(type:string)=>apiRequest<MasterItem[]>(`/master-data?type=${encodeURIComponent(type)}`);export const createMasterData=(input:{type:string;name:string;categoryId?:string|null})=>apiRequest<MasterItem>("/master-data",{method:"POST",body:JSON.stringify(input)});export const updateMasterData=(type:string,id:string,input:{name:string;active?:boolean;categoryId?:string|null})=>apiRequest<MasterItem>(`/master-data/${encodeURIComponent(type)}/${id}`,{method:"PUT",body:JSON.stringify(input)});
