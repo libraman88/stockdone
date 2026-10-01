@@ -145,17 +145,56 @@ export async function getDashboardTopProducts(){
 
 export type PaymentReport={method:string;invoices:number;total:number};
 export type ProductReport={name:string;sku:string;size:string|null;color:string|null;units:number;sales:number;cost:number;gross_profit:number};
-export function getSalesReport(from:string,to:string){return apiRequest<{daily:DailySalesReport[];payments:PaymentReport[]}>(`/reports/sales?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
+export async function getSalesReport(from:string,to:string){
+  try{return await apiRequest<{daily:DailySalesReport[];payments:PaymentReport[]}>(`/reports/sales?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
+  catch(error){
+    if(!electronOffline()||!isNetworkFailure(error))throw error;
+    const daily=await offlineQuery<any>("SELECT substr(created_at,1,10) AS date,COUNT(*) AS invoices,COALESCE(SUM(total),0) AS total,COALESCE(SUM(discount),0) AS discounts FROM sales WHERE substr(created_at,1,10)>=? AND substr(created_at,1,10)<=? GROUP BY substr(created_at,1,10) ORDER BY date",[from,to]);
+    const payments=await offlineQuery<any>("SELECT payment_method AS method,COUNT(*) AS invoices,COALESCE(SUM(total),0) AS total FROM sales WHERE substr(created_at,1,10)>=? AND substr(created_at,1,10)<=? GROUP BY payment_method ORDER BY total DESC",[from,to]);
+    return {daily:daily.map((x:any)=>({...x,invoices:Number(x.invoices),total:Number(x.total),discounts:Number(x.discounts)})),payments:payments.map((x:any)=>({...x,invoices:Number(x.invoices),total:Number(x.total)}))};
+  }
+}
 export type PaymentTransactionReport={method:string;transactions:number;total:number};
-export function getPaymentReport(from:string,to:string){return apiRequest<PaymentTransactionReport[]>(`/reports/payments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
+export async function getPaymentReport(from:string,to:string){
+  try{return await apiRequest<PaymentTransactionReport[]>(`/reports/payments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
+  catch(error){
+    if(!electronOffline()||!isNetworkFailure(error))throw error;
+    const rows=await offlineQuery<any>("SELECT payment_method AS method,COUNT(*) AS transactions,COALESCE(SUM(total),0) AS total FROM sales WHERE substr(created_at,1,10)>=? AND substr(created_at,1,10)<=? GROUP BY payment_method ORDER BY total DESC",[from,to]);
+    return rows.map((x:any)=>({...x,transactions:Number(x.transactions),total:Number(x.total)}));
+  }
+}
 export type ReturnProfitImpact={returned_sales:number;returned_cost:number;exchange_sales:number;exchange_cost:number;transactions:number;net_sales_impact:number;gross_profit_impact:number};
 export function getReturnProfitImpact(from:string,to:string){return apiRequest<ReturnProfitImpact>(`/reports/profit-returns?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
 export type ProfitReport={summary:{invoices:number;gross_sales:number;discounts:number;net_sales:number;cogs:number;gross_profit:number;margin_percent:number};daily:Array<Record<string,unknown>>};
-export function getProfitReport(from:string,to:string){return apiRequest<ProfitReport>(`/reports/profit?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
-export function getProductReport(from:string,to:string){return apiRequest<ProductReport[]>(`/reports/products?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
+export async function getProfitReport(from:string,to:string){
+  try{return await apiRequest<ProfitReport>(`/reports/profit?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
+  catch(error){
+    if(!electronOffline()||!isNetworkFailure(error))throw error;
+    const summaryRows=await offlineQuery<any>("SELECT COUNT(*) AS invoices,COALESCE(SUM(total+discount),0) AS gross_sales,COALESCE(SUM(discount),0) AS discounts,COALESCE(SUM(total),0) AS net_sales FROM sales WHERE substr(created_at,1,10)>=? AND substr(created_at,1,10)<=?",[from,to]);
+    const costRows=await offlineQuery<any>("SELECT COALESCE(SUM(si.qty*si.unit_cost),0) AS cogs FROM sale_items si JOIN sales s ON s.id=si.sale_id WHERE substr(s.created_at,1,10)>=? AND substr(s.created_at,1,10)<=?",[from,to]);
+    const daily=await offlineQuery<any>("SELECT substr(s.created_at,1,10) AS date,COUNT(DISTINCT s.id) AS invoices,COALESCE(SUM(s.total),0) AS net_sales,COALESCE(SUM(si.qty*si.unit_cost),0) AS cogs,COALESCE(SUM(si.qty*(si.price-si.unit_cost)),0) AS gross_profit FROM sales s LEFT JOIN sale_items si ON si.sale_id=s.id WHERE substr(s.created_at,1,10)>=? AND substr(s.created_at,1,10)<=? GROUP BY substr(s.created_at,1,10) ORDER BY date",[from,to]);
+    const s=summaryRows[0]||{}; const grossSales=Number(s.gross_sales||0), discounts=Number(s.discounts||0), netSales=Number(s.net_sales||0), cogs=Number(costRows[0]?.cogs||0), grossProfit=netSales-cogs;
+    return {summary:{invoices:Number(s.invoices||0),gross_sales:grossSales,discounts,net_sales:netSales,cogs,gross_profit:grossProfit,margin_percent:netSales?grossProfit/netSales*100:0},daily:daily.map((x:any)=>({...x,invoices:Number(x.invoices),net_sales:Number(x.net_sales),cogs:Number(x.cogs),gross_profit:Number(x.gross_profit)}))};
+  }
+}
+export async function getProductReport(from:string,to:string){
+  try{return await apiRequest<ProductReport[]>(`/reports/products?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
+  catch(error){
+    if(!electronOffline()||!isNetworkFailure(error))throw error;
+    const rows=await offlineQuery<any>("SELECT p.name,p.sku,p.size,p.color,COALESCE(SUM(si.qty),0) AS units,COALESCE(SUM(si.qty*si.price),0) AS sales,COALESCE(SUM(si.qty*si.unit_cost),0) AS cost,COALESCE(SUM(si.qty*(si.price-si.unit_cost)),0) AS gross_profit FROM sale_items si JOIN sales s ON s.id=si.sale_id JOIN products p ON p.id=si.product_id WHERE substr(s.created_at,1,10)>=? AND substr(s.created_at,1,10)<=? GROUP BY p.id,p.name,p.sku,p.size,p.color ORDER BY sales DESC",[from,to]);
+    return rows.map((x:any)=>({...x,units:Number(x.units),sales:Number(x.sales),cost:Number(x.cost),gross_profit:Number(x.gross_profit)}));
+  }
+}
 export type CategoryReport={category:string;units:number;sales:number;cost:number;gross_profit:number};
 export type CashierReport={cashier:string;invoices:number;sales:number;discounts:number};
-export function getCategoryReport(from:string,to:string){return apiRequest<CategoryReport[]>(`/reports/categories?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
+export async function getCategoryReport(from:string,to:string){
+  try{return await apiRequest<CategoryReport[]>(`/reports/categories?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
+  catch(error){
+    if(!electronOffline()||!isNetworkFailure(error))throw error;
+    const rows=await offlineQuery<any>("SELECT COALESCE(p.category,'Uncategorized') AS category,COALESCE(SUM(si.qty),0) AS units,COALESCE(SUM(si.qty*si.price),0) AS sales,COALESCE(SUM(si.qty*si.unit_cost),0) AS cost,COALESCE(SUM(si.qty*(si.price-si.unit_cost)),0) AS gross_profit FROM sale_items si JOIN sales s ON s.id=si.sale_id JOIN products p ON p.id=si.product_id WHERE substr(s.created_at,1,10)>=? AND substr(s.created_at,1,10)<=? GROUP BY COALESCE(p.category,'Uncategorized') ORDER BY sales DESC",[from,to]);
+    return rows.map((x:any)=>({...x,units:Number(x.units),sales:Number(x.sales),cost:Number(x.cost),gross_profit:Number(x.gross_profit)}));
+  }
+}
 export function getCashierReport(from:string,to:string){return apiRequest<CashierReport[]>(`/reports/cashiers?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
 export function getPurchaseReport(from:string,to:string){return apiRequest<any[]>(`/reports/purchases?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
 export function getKhataReport(){return apiRequest<any[]>("/reports/khata");}
