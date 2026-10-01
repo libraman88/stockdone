@@ -19,6 +19,10 @@ export function setApiToken(value: string | null) {
 
 export class ApiError extends Error { constructor(message: string, public readonly status: number) { super(message); this.name = "ApiError"; } }
 
+
+function isNetworkFailure(error: unknown) {
+  return error instanceof TypeError || (error instanceof Error && /fetch|network|failed to fetch|load failed|connection/i.test(error.message));
+}
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
@@ -48,8 +52,29 @@ export function login(username: string, password: string) {
   });
 }
 
-export function getProducts() {
-  return apiRequest<Product[]>("/products").then(rows => rows.map((p: any) => ({...p, variantId: p.variantId || p.variant_id, reorderLevel: Number(p.reorderLevel ?? p.reorder_level ?? 5), qty: Number(p.qty ?? 0), cost: Number(p.cost ?? 0), price: Number(p.price ?? 0)})));
+
+const electronOffline = () => typeof window !== "undefined" && Boolean((window as Window & { stockDoneOffline?: unknown }).stockDoneOffline);
+async function offlineQuery<T>(sql:string, params:unknown[]=[]):Promise<T[]> {
+  if (!electronOffline()) throw new Error("Offline database unavailable.");
+  const bridge = (window as Window & { stockDoneOffline?: { query:<R=Record<string,unknown>>(sql:string,params?:unknown[])=>Promise<R[]> } }).stockDoneOffline;
+  if (!bridge) throw new Error("Offline database unavailable.");
+  return bridge.query<T>(sql, params);
+}
+async function offlineExec(sql:string, params:unknown[]=[]):Promise<void> {
+  if (!electronOffline()) throw new Error("Offline database unavailable.");
+  const bridge = (window as Window & { stockDoneOffline?: { exec:(sql:string,params?:unknown[])=>Promise<unknown> } }).stockDoneOffline;
+  if (!bridge) throw new Error("Offline database unavailable.");
+  await bridge.exec(sql, params);
+}
+\nexport async function getProducts() {
+  try {
+    const rows = await apiRequest<Product[]>("/products");
+    return rows.map((p: any) => ({...p, variantId: p.variantId || p.variant_id, reorderLevel: Number(p.reorderLevel ?? p.reorder_level ?? 5), qty: Number(p.qty ?? 0), cost: Number(p.cost ?? 0), price: Number(p.price ?? 0)}));
+  } catch (error) {
+    if (!electronOffline() || !isNetworkFailure(error)) throw error;
+    const rows = await offlineQuery<any>("SELECT id,name,sku,category,brand,sub_category AS subCategory,floor,warehouse,size,color,barcode,cost,price,qty,reorder_level AS reorderLevel FROM products ORDER BY name");
+    return rows.map((p:any)=>({...p,variantId:p.id,reorderLevel:Number(p.reorderLevel ?? 5),qty:Number(p.qty ?? 0),cost:Number(p.cost ?? 0),price:Number(p.price ?? 0)})) as Product[];
+  }
 }
 
 export function updateProduct(id:string, product: Partial<Omit<Product,"id">>) { return apiRequest<{ok:boolean;id:string}>(`/products/${id}`, {method:"PUT", body:JSON.stringify({name:product.name,sku:product.sku,categoryId:null,size:product.size||null,color:product.color||null,barcode:product.barcode||null,cost:product.cost,price:product.price,qty:product.qty,reorderLevel:product.reorderLevel})}); }
@@ -76,13 +101,13 @@ export function createPurchase(input: { invoiceNo: string; supplierId?: string; 
 }
 
 export type ApiCustomer = { id:string; name:string; phone?:string|null; address?:string|null; balance:number };
-export function getCustomers(){return apiRequest<ApiCustomer[]>("/customers");}
+export async function getCustomers(){try{return await apiRequest<ApiCustomer[]>("/customers");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await offlineExec("CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,address TEXT,balance REAL NOT NULL DEFAULT 0,updated_at TEXT NOT NULL)");return offlineQuery<ApiCustomer>("SELECT id,name,phone,address,balance FROM customers ORDER BY name");}}
 export function createCustomer(input:{name:string;phone?:string;address?:string}){return apiRequest<ApiCustomer>("/customers",{method:"POST",body:JSON.stringify(input)});}
 export function recordCustomerPayment(id:string,amount:number,note?:string){return apiRequest<{customerId:string;balance:number}>(`/customers/${id}/payment`,{method:"POST",body:JSON.stringify({amount,note})});}
 
 export type ApiReturnItem={variantId:string;quantity:number;unitPrice:number};
 export function createReturn(input:{saleId:string;type:"return"|"exchange";refundAmount:number;refundMethod?:"cash"|"card"|"bank"|"other";items:ApiReturnItem[];exchangeItems?:ApiReturnItem[]}){return apiRequest<{id:string;type:string;refundAmount:number;priceDifference:number}>("/returns",{method:"POST",body:JSON.stringify(input)});}
-export function getSales(){return apiRequest<any[]>("/sales");}
+export async function getSales(){try{return await apiRequest<any[]>("/sales");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const rows=await offlineQuery<any>("SELECT id,invoice_no,client_reference,total,payment_method,discount,customer_id,status,created_at FROM sales ORDER BY created_at DESC");const items=await offlineQuery<any>("SELECT si.sale_id,si.product_id,si.qty,si.price,p.name,p.sku,p.size,p.color FROM sale_items si LEFT JOIN products p ON p.id=si.product_id ORDER BY si.id");return rows.map((s:any)=>({id:s.id,invoiceNo:s.invoice_no,total:Number(s.total),paymentMethod:s.payment_method,discount:Number(s.discount),customerId:s.customer_id,createdAt:s.created_at,status:s.status,items:items.filter((i:any)=>i.sale_id===s.id).map((i:any)=>({id:i.product_id,productId:i.product_id,variantId:i.product_id,qty:Number(i.qty),price:Number(i.price),name:i.name,sku:i.sku,size:i.size,color:i.color}))}));}}
 
 export type ReportSummary={sales:{invoices:number;sales_total:number;discounts:number};profit:{gross_profit:number};inventory:{variants:number;units:number;cost_value:number;retail_value:number};lowStock:Array<{name:string;sku:string;size:string|null;color:string|null;quantity:number;reorder_level:number}>};
 export function getReportSummary(from:string,to:string){return apiRequest<ReportSummary>(`/reports/summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
@@ -140,7 +165,7 @@ export function receiveStockTransfer(id:string){return apiRequest<{id:string;sta
 
 export function getStockTransfers(){return apiRequest<any[]>("/inventory/transfers");}
 
-export function getPurchases(){return apiRequest<any[]>("/purchases");}
+export async function getPurchases(){try{return await apiRequest<any[]>("/purchases");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const rows=await offlineQuery<any>("SELECT id,invoice_no,supplier_id,total,payment_method,paid_amount,created_at FROM purchases ORDER BY created_at DESC");return rows.map((p:any)=>({id:p.id,invoice_no:p.invoice_no,supplier_id:p.supplier_id,total:Number(p.total),payment_method:p.payment_method,paid_amount:Number(p.paid_amount),purchase_date:p.created_at}));}}
 
 export type Supplier={id:string;name:string;phone?:string|null;address?:string|null;balance?:number};
 export function getSuppliers(){return apiRequest<Supplier[]>("/suppliers");}
@@ -150,9 +175,9 @@ export function getSupplierTransactions(id:string){return apiRequest<SupplierTra
 export function createSupplier(input:{name:string;phone?:string;address?:string}){return apiRequest<Supplier>("/suppliers",{method:"POST",body:JSON.stringify(input)});}
 
 export type InventorySummary={product_id:string;name:string;sku:string;variant_id:string;size:string|null;color:string|null;barcode:string|null;quantity:number;cost:number;price:number;reorder_level:number};
-export function getInventorySummary(){return apiRequest<InventorySummary[]>("/inventory/summary");}
+export async function getInventorySummary(){try{return await apiRequest<InventorySummary[]>("/inventory/summary");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;return offlineQuery<InventorySummary>("SELECT id AS product_id,name,sku,id AS variant_id,size,color,barcode,qty AS quantity,cost,price,reorder_level FROM products ORDER BY name");}}
 export type StockMovementRow={id:string;branch_id:string;variant_id:string;type:string;quantity:number;reason:string|null;reference_id:string|null;created_at:string;name:string;sku:string;size:string|null;color:string|null};
-export function getInventoryMovements(){return apiRequest<StockMovementRow[]>("/inventory/movements");}
+export async function getInventoryMovements(){try{return await apiRequest<StockMovementRow[]>("/inventory/movements");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;return offlineQuery<StockMovementRow>("SELECT sm.id,'' AS branch_id,sm.product_id AS variant_id,sm.type,sm.quantity,sm.reason,sm.reference_id,sm.created_at,p.name,p.sku,p.size,p.color FROM stock_movements sm LEFT JOIN products p ON p.id=sm.product_id ORDER BY sm.created_at DESC");}}
 
 export type ApiReturnRecord={id:string;type:string;sale_id:string;refund_amount:number;price_difference:number;created_at:string};
 export function getReturns(){return apiRequest<ApiReturnRecord[]>("/returns");}
