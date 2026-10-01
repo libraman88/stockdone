@@ -45,8 +45,15 @@ jobs:
           git add package.json
           git commit -m "chore: release $env:VERSION_NUMBER [skip ci]"
           git push origin HEAD:main
+          $commit = git rev-parse HEAD
+          "RELEASE_COMMIT=$commit" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Install dependencies
+      - name: Create GitHub release and tag
+        shell: pwsh
+        run: |
+          gh release create "$env:VERSION" --repo "${{ github.repository }}" --target "$env:RELEASE_COMMIT" --title "StockDone $env:VERSION" --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}      - name: Install dependencies
         run: npm install --no-audit --no-fund
 
       - name: Build and publish Windows installer
