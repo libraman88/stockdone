@@ -192,10 +192,10 @@ export function getStockTransfers(){return apiRequest<any[]>("/inventory/transfe
 export async function getPurchases(){try{return await apiRequest<any[]>("/purchases");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const rows=await offlineQuery<any>("SELECT id,invoice_no,supplier_id,total,payment_method,paid_amount,created_at FROM purchases ORDER BY created_at DESC");return rows.map((p:any)=>({id:p.id,invoice_no:p.invoice_no,supplier_id:p.supplier_id,total:Number(p.total),payment_method:p.payment_method,paid_amount:Number(p.paid_amount),purchase_date:p.created_at}));}}
 
 export type Supplier={id:string;name:string;phone?:string|null;address?:string|null;balance?:number};
-export function getSuppliers(){return apiRequest<Supplier[]>("/suppliers");}
+export async function getSuppliers(){try{return await apiRequest<Supplier[]>("/suppliers");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await offlineExec("CREATE TABLE IF NOT EXISTS suppliers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,address TEXT,balance REAL NOT NULL DEFAULT 0)");return offlineQuery<Supplier>("SELECT id,name,phone,address,balance FROM suppliers ORDER BY name");}}
 export function recordSupplierPayment(id:string,amount:number,note?:string){return apiRequest<{supplierId:string;balance:number}>(`/suppliers/${id}/payment`,{method:"POST",body:JSON.stringify({amount,note})});}
 export type SupplierTransaction={id:string;type:"purchase"|"payment";amount:number;reference_id?:string|null;note?:string|null;created_at:string};
-export function getSupplierTransactions(id:string){return apiRequest<SupplierTransaction[]>(`/suppliers/${id}/transactions`);}
+export async function getSupplierTransactions(id:string){try{return await apiRequest<SupplierTransaction[]>(`/suppliers/${id}/transactions`);}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;return offlineQuery<SupplierTransaction>("SELECT id,type,amount,reference_id,note,created_at FROM supplier_transactions WHERE supplier_id=? ORDER BY created_at DESC",[id]);}}
 export function createSupplier(input:{name:string;phone?:string;address?:string}){return apiRequest<Supplier>("/suppliers",{method:"POST",body:JSON.stringify(input)});}
 
 export type InventorySummary={product_id:string;name:string;sku:string;variant_id:string;size:string|null;color:string|null;barcode:string|null;quantity:number;cost:number;price:number;reorder_level:number};
@@ -204,10 +204,10 @@ export type StockMovementRow={id:string;branch_id:string;variant_id:string;type:
 export async function getInventoryMovements(){try{return await apiRequest<StockMovementRow[]>("/inventory/movements");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;return offlineQuery<StockMovementRow>("SELECT sm.id,'' AS branch_id,sm.product_id AS variant_id,sm.type,sm.quantity,sm.reason,sm.reference_id,sm.created_at,p.name,p.sku,p.size,p.color FROM stock_movements sm LEFT JOIN products p ON p.id=sm.product_id ORDER BY sm.created_at DESC");}}
 
 export type ApiReturnRecord={id:string;type:string;sale_id:string;refund_amount:number;price_difference:number;created_at:string};
-export function getReturns(){return apiRequest<ApiReturnRecord[]>("/returns");}
+export async function getReturns(){try{return await apiRequest<ApiReturnRecord[]>("/returns");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await offlineExec("CREATE TABLE IF NOT EXISTS returns (id TEXT PRIMARY KEY,type TEXT NOT NULL,sale_id TEXT NOT NULL,refund_amount REAL NOT NULL DEFAULT 0,price_difference REAL NOT NULL DEFAULT 0,created_at TEXT NOT NULL)");return offlineQuery<ApiReturnRecord>("SELECT id,type,sale_id,refund_amount,price_difference,created_at FROM returns ORDER BY created_at DESC");}}
 
 export type CustomerTransactionRow={id:string;customer_id:string;type:string;amount:number;note:string|null;created_at:string};
-export function getCustomerTransactions(customerId:string){return apiRequest<CustomerTransactionRow[]>(`/customers/${customerId}/transactions`);}
+export async function getCustomerTransactions(customerId:string){try{return await apiRequest<CustomerTransactionRow[]>(`/customers/${customerId}/transactions`);}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await offlineExec("CREATE TABLE IF NOT EXISTS customer_transactions (id TEXT PRIMARY KEY,customer_id TEXT NOT NULL,type TEXT NOT NULL,amount REAL NOT NULL,note TEXT,created_at TEXT NOT NULL)");return offlineQuery<CustomerTransactionRow>("SELECT id,customer_id,type,amount,note,created_at FROM customer_transactions WHERE customer_id=? ORDER BY created_at DESC",[customerId]);}}
 
 export type OfflineStockDifference={variant_id:string;name:string;sku:string;size:string|null;color:string|null;server_quantity:number;local_quantity:number|null;difference:number};
 export function reconcileOfflineStock(items:{variantId:string;quantity:number}[]){return apiRequest<{checked:number;differences:OfflineStockDifference[]}>("/inventory/reconcile-offline",{method:"POST",body:JSON.stringify({items})});}
