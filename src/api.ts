@@ -87,7 +87,8 @@ export async function getProducts() {
   }
 }
 
-export function updateProduct(id:string, product: Partial<Omit<Product,"id">>) { return apiRequest<{ok:boolean;id:string}>(`/products/${id}`, {method:"PUT", body:JSON.stringify({name:product.name,sku:product.sku,categoryId:(product as any).categoryId||null,brand:product.brand||null,subCategory:product.subCategory||null,floor:product.floor||null,warehouse:product.warehouse||null,size:product.size||null,color:product.color||null,barcode:product.barcode||null,cost:product.cost,price:product.price,qty:product.qty,reorderLevel:product.reorderLevel})}); }\nexport function deleteProduct(id:string){ return apiRequest<{ok:boolean;id:string;archived:boolean}>(`/products/${id}`,{method:"DELETE"}); }
+export function updateProduct(id:string, product: Partial<Omit<Product,"id">>) { return apiRequest<{ok:boolean;id:string}>(`/products/${id}`, {method:"PUT", body:JSON.stringify({name:product.name,sku:product.sku,categoryId:(product as any).categoryId||null,brand:product.brand||null,subCategory:product.subCategory||null,floor:product.floor||null,warehouse:product.warehouse||null,size:product.size||null,color:product.color||null,barcode:product.barcode||null,cost:product.cost,price:product.price,qty:product.qty,reorderLevel:product.reorderLevel})}); }
+export function deleteProduct(id:string){ return apiRequest<{ok:boolean;id:string;archived:boolean}>(`/products/${id}`,{method:"DELETE"}); }
 
 export function createProduct(product: Omit<Product,"id">) {
   return apiRequest<{id:string;variantId:string}>("/products", {
