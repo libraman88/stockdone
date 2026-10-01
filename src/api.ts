@@ -1,3 +1,4 @@
+import { authStorage } from "./auth";
 import type { Product } from "./types";
 
 const configuredApiUrl = String(import.meta.env.VITE_API_URL || "").trim().replace(/\/$/, "");
