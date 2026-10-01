@@ -93,7 +93,8 @@ export function createProduct(product: Omit<Product,"id">) {
   return apiRequest<{id:string;variantId:string}>("/products", {
     method: "POST",
     body: JSON.stringify({
-      name: product.name, sku: product.sku, categoryId: (product as any).categoryId || null,\n      brand: product.brand || null, subCategory: product.subCategory || null, floor: product.floor || null, warehouse: product.warehouse || null,
+      name: product.name, sku: product.sku, categoryId: (product as any).categoryId || null,
+      brand: product.brand || null, subCategory: product.subCategory || null, floor: product.floor || null, warehouse: product.warehouse || null,
       size: product.size || null, color: product.color || null,
       barcode: product.barcode || null, cost: product.cost,
       price: product.price, qty: product.qty, reorderLevel: product.reorderLevel
