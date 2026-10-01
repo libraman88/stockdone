@@ -53,7 +53,9 @@ jobs:
         run: |
           gh release create "$env:VERSION" --repo "${{ github.repository }}" --target "$env:RELEASE_COMMIT" --title "StockDone $env:VERSION" --generate-notes
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}      - name: Install dependencies
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install dependencies
         run: npm install --no-audit --no-fund
 
       - name: Build and publish Windows installer
