@@ -79,8 +79,25 @@ export async function queueOfflineExchange(x:{id:string;saleId:string;returned:{
   const s=authStorage.getSession(); if(!s?.businessId||!s?.branchId)throw new Error("Offline exchange cannot be queued without branch context.");
   const now=new Date().toISOString(); await offlineDb.exec("BEGIN");
   try{
-    for(const i of x.returned){const r=await offlineDb.query<{qty:number}>("SELECT qty FROM products WHERE id=?",[i.productId]);if(!r[0])throw new Error("Returned product is not available offline.");await offlineDb.exec("UPDATE products SET qty=qty+?,updated_at=? WHERE id=?",[i.qty,now,i.productId]);await offlineDb.exec("INSERT INTO stock_movements(id,product_id,type,quantity,reason,reference_id,created_at) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),i.productId,"exchange_return",i.qty,"offline_exchange",x.id,now]);}
-    for(const i of x.replacement){const r=await offlineDb.query<{qty:number}>("SELECT qty FROM products WHERE id=?",[i.productId]);if(!r[0]||Number(r[0].qty)<i.qty)throw new Error("Insufficient offline stock for exchange.");await offlineDb.exec("UPDATE products SET qty=qty-?,updated_at=? WHERE id=?",[i.qty,now,i.productId]);await offlineDb.exec("INSERT INTO stock_movements(id,product_id,type,quantity,reason,reference_id,created_at) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),i.productId,"exchange_sale",-i.qty,"offline_exchange",x.id,now]);}
+    await offlineDb.exec("CREATE TABLE IF NOT EXISTS returns (id TEXT PRIMARY KEY,type TEXT NOT NULL,sale_id TEXT NOT NULL,refund_amount REAL NOT NULL DEFAULT 0,price_difference REAL NOT NULL DEFAULT 0,business_id TEXT,branch_id TEXT,created_at TEXT NOT NULL)");
+    await offlineDb.exec("CREATE TABLE IF NOT EXISTS return_items (id TEXT PRIMARY KEY,return_id TEXT NOT NULL,variant_id TEXT NOT NULL,quantity INTEGER NOT NULL,direction TEXT NOT NULL,unit_price REAL NOT NULL DEFAULT 0,unit_cost REAL NOT NULL DEFAULT 0,created_at TEXT NOT NULL)");
+    await offlineDb.exec("INSERT INTO returns(id,type,sale_id,refund_amount,price_difference,business_id,branch_id,created_at) VALUES(?,?,?,?,?,?,?,?)",[x.id,"exchange",x.saleId,0,x.difference,s.businessId,s.branchId,now]);
+    for(const i of x.returned){
+      const r=await offlineDb.query<{qty:number}>("SELECT qty FROM products WHERE id=?",[i.productId]);
+      if(!r[0])throw new Error("Returned product is not available offline.");
+      const saleItem=await offlineDb.query<{price:number;unit_cost:number}>("SELECT price,unit_cost FROM sale_items WHERE sale_id=? AND product_id=? ORDER BY rowid LIMIT 1",[x.saleId,i.productId]);
+      if(!saleItem[0])throw new Error("Original sale item is not available offline.");
+      await offlineDb.exec("UPDATE products SET qty=qty+?,updated_at=? WHERE id=?",[i.qty,now,i.productId]);
+      await offlineDb.exec("INSERT INTO return_items(id,return_id,variant_id,quantity,direction,unit_price,unit_cost,created_at) VALUES(?,?,?,?,?,?,?,?)",[i.id,x.id,i.productId,i.qty,"in",Number(saleItem[0].price),Number(saleItem[0].unit_cost),now]);
+      await offlineDb.exec("INSERT INTO stock_movements(id,product_id,type,quantity,reason,reference_id,created_at) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),i.productId,"exchange_return",i.qty,"offline_exchange",x.id,now]);
+    }
+    for(const i of x.replacement){
+      const r=await offlineDb.query<{qty:number}>("SELECT qty FROM products WHERE id=?",[i.productId]);
+      if(!r[0]||Number(r[0].qty)<i.qty)throw new Error("Insufficient offline stock for exchange.");
+      await offlineDb.exec("UPDATE products SET qty=qty-?,updated_at=? WHERE id=?",[i.qty,now,i.productId]);
+      await offlineDb.exec("INSERT INTO return_items(id,return_id,variant_id,quantity,direction,unit_price,unit_cost,created_at) VALUES(?,?,?,?,?,?,?,?)",[i.id,x.id,i.productId,i.qty,"out",i.price,i.unitCost,now]);
+      await offlineDb.exec("INSERT INTO stock_movements(id,product_id,type,quantity,reason,reference_id,created_at) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),i.productId,"exchange_sale",-i.qty,"offline_exchange",x.id,now]);
+    }
     await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"exchange",x.id,"create",JSON.stringify({...x,businessId:s.businessId,branchId:s.branchId}),now,"pending"]);
     await offlineDb.exec("COMMIT");
   }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
@@ -106,10 +123,14 @@ export async function queueOfflineReturn(ret:{id:string;saleId:string;items:{id:
   const s=authStorage.getSession(); if(!s?.businessId||!s?.branchId)throw new Error("Offline return cannot be queued without branch context.");
   const now=new Date().toISOString(); await offlineDb.exec("BEGIN");
   try{
+    await offlineDb.exec("CREATE TABLE IF NOT EXISTS returns (id TEXT PRIMARY KEY,type TEXT NOT NULL,sale_id TEXT NOT NULL,refund_amount REAL NOT NULL DEFAULT 0,price_difference REAL NOT NULL DEFAULT 0,business_id TEXT,branch_id TEXT,created_at TEXT NOT NULL)");
+    await offlineDb.exec("CREATE TABLE IF NOT EXISTS return_items (id TEXT PRIMARY KEY,return_id TEXT NOT NULL,variant_id TEXT NOT NULL,quantity INTEGER NOT NULL,direction TEXT NOT NULL,unit_price REAL NOT NULL DEFAULT 0,unit_cost REAL NOT NULL DEFAULT 0,created_at TEXT NOT NULL)");
+    await offlineDb.exec("INSERT INTO returns(id,type,sale_id,refund_amount,price_difference,business_id,branch_id,created_at) VALUES(?,?,?,?,?,?,?,?)",[ret.id,"return",ret.saleId,ret.refund,0,s.businessId,s.branchId,now]);
     for(const i of ret.items){
       const rows=await offlineDb.query<{qty:number}>("SELECT qty FROM products WHERE id=?",[i.productId]);
       if(!rows[0])throw new Error("Product is not available offline.");
       await offlineDb.exec("UPDATE products SET qty=qty+?,updated_at=? WHERE id=?",[i.qty,now,i.productId]);
+      await offlineDb.exec("INSERT INTO return_items(id,return_id,variant_id,quantity,direction,unit_price,unit_cost,created_at) VALUES(?,?,?,?,?,?,?,?)",[i.id,ret.id,i.productId,i.qty,"in",i.qty?i.refund/i.qty:0,i.unitCost,now]);
       await offlineDb.exec("INSERT INTO stock_movements(id,product_id,type,quantity,reason,reference_id,created_at) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),i.productId,"return",i.qty,"offline_return",ret.id,now]);
     }
     await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"return",ret.id,"create",JSON.stringify({...ret,businessId:s.businessId,branchId:s.branchId}),now,"pending"]);
