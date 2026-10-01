@@ -195,9 +195,30 @@ export async function getCategoryReport(from:string,to:string){
     return rows.map((x:any)=>({...x,units:Number(x.units),sales:Number(x.sales),cost:Number(x.cost),gross_profit:Number(x.gross_profit)}));
   }
 }
-export function getCashierReport(from:string,to:string){return apiRequest<CashierReport[]>(`/reports/cashiers?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
-export function getPurchaseReport(from:string,to:string){return apiRequest<any[]>(`/reports/purchases?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
-export function getKhataReport(){return apiRequest<any[]>("/reports/khata");}
+export async function getCashierReport(from:string,to:string){
+  try{return await apiRequest<CashierReport[]>(`/reports/cashiers?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
+  catch(error){
+    if(!electronOffline()||!isNetworkFailure(error))throw error;
+    const rows=await offlineQuery<any>("SELECT 'Local' AS cashier,COUNT(*) AS invoices,COALESCE(SUM(total),0) AS sales,COALESCE(SUM(discount),0) AS discounts FROM sales WHERE substr(created_at,1,10)>=? AND substr(created_at,1,10)<=?",[from,to]);
+    return rows.map((x:any)=>({...x,invoices:Number(x.invoices),sales:Number(x.sales),discounts:Number(x.discounts)}));
+  }
+}
+export async function getPurchaseReport(from:string,to:string){
+  try{return await apiRequest<any[]>(`/reports/purchases?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);}
+  catch(error){
+    if(!electronOffline()||!isNetworkFailure(error))throw error;
+    return offlineQuery<any>("SELECT p.id,p.invoice_no,p.supplier_id,p.total,p.payment_method,p.paid_amount,p.created_at FROM purchases p WHERE substr(p.created_at,1,10)>=? AND substr(p.created_at,1,10)<=? ORDER BY p.created_at DESC",[from,to]);
+  }
+}
+export async function getKhataReport(){
+  try{return await apiRequest<any[]>("/reports/khata");}
+  catch(error){
+    if(!electronOffline()||!isNetworkFailure(error))throw error;
+    await offlineExec("CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,address TEXT,balance REAL NOT NULL DEFAULT 0)");
+    const rows=await offlineQuery<any>("SELECT id,name,phone,address,balance FROM customers ORDER BY name");
+    return rows.map((x:any)=>({...x,balance:Number(x.balance||0)}));
+  }
+}
 
 export type AdminRole={id:string;name:string;permissions:string[]};
 export type AdminPermission={code:string;description:string};
