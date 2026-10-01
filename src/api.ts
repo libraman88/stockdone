@@ -1,6 +1,14 @@
 import type { Product } from "./types";
 
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:4000/api";
+const configuredApiUrl = String(import.meta.env.VITE_API_URL || "").trim().replace(/\\/$/, "");
+const runningInElectron = typeof window !== "undefined" && Boolean((window as Window & { stockDoneOffline?: unknown }).stockDoneOffline);
+const browserApiUrl = typeof window !== "undefined" && window.location.hostname !== "localhost" ? "/api" : "http://localhost:4000/api";
+
+// Keep local development/Electron on the existing localhost API, while deployed web
+// builds use same-origin /api unless an explicit VITE_API_URL is configured.
+// This prevents a hosted StockDone build from accidentally calling the user's PC.
+const BASE_URL = configuredApiUrl || (runningInElectron ? "http://localhost:4000/api" : browserApiUrl);
+
 let token = sessionStorage.getItem("stockdone.apiToken");
 
 export function setApiToken(value: string | null) {
