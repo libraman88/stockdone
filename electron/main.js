@@ -7,7 +7,7 @@ let mainWindow = null;
 
 const OFFLINE_SCHEMA = [
   "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
-  "CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, name TEXT NOT NULL, sku TEXT NOT NULL UNIQUE, category TEXT, category_id TEXT, brand TEXT, sub_category TEXT, floor TEXT, warehouse TEXT, size TEXT, color TEXT, barcode TEXT UNIQUE, cost REAL NOT NULL DEFAULT 0, price REAL NOT NULL DEFAULT 0, qty INTEGER NOT NULL DEFAULT 0, reorder_level INTEGER NOT NULL DEFAULT 5, active INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, name TEXT NOT NULL, sku TEXT NOT NULL UNIQUE, category TEXT, category_id TEXT, brand TEXT, sub_category TEXT, floor TEXT, warehouse TEXT, size TEXT, color TEXT, barcode TEXT UNIQUE, cost REAL NOT NULL DEFAULT 0, price REAL NOT NULL DEFAULT 0, qty INTEGER NOT NULL DEFAULT 0, reorder_level INTEGER NOT NULL DEFAULT 5, active INTEGER NOT NULL DEFAULT 1, master_values TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS sales (id TEXT PRIMARY KEY, invoice_no TEXT NOT NULL UNIQUE, client_reference TEXT UNIQUE, total REAL NOT NULL, payment_method TEXT NOT NULL, discount REAL NOT NULL DEFAULT 0, customer_id TEXT, status TEXT NOT NULL DEFAULT 'completed', created_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS sale_items (id TEXT PRIMARY KEY, sale_id TEXT NOT NULL REFERENCES sales(id), product_id TEXT NOT NULL REFERENCES products(id), qty INTEGER NOT NULL, price REAL NOT NULL, unit_cost REAL NOT NULL DEFAULT 0)",
   "CREATE TABLE IF NOT EXISTS stock_movements (id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id), type TEXT NOT NULL, quantity INTEGER NOT NULL, reason TEXT, reference_id TEXT, created_at TEXT NOT NULL)",
@@ -40,7 +40,7 @@ function loadSqlite() {
     db = new Database(path.join(dbDir, "stockdone.sqlite"));
     db.pragma("journal_mode = WAL");
     db.pragma("foreign_keys = ON");
-    db.transaction(() => { OFFLINE_SCHEMA.forEach((sql) => db.prepare(sql).run()); const cols = db.prepare("PRAGMA table_info(products)").all(); const names = new Set(cols.map(c => c.name)); for (const [name,type] of [["category_id","TEXT"],["brand","TEXT"],["sub_category","TEXT"],["floor","TEXT"],["warehouse","TEXT"],["active","INTEGER NOT NULL DEFAULT 1"]]) { if (!names.has(name)) db.prepare(`ALTER TABLE products ADD COLUMN ${name} ${type}`).run(); } })();
+    db.transaction(() => { OFFLINE_SCHEMA.forEach((sql) => db.prepare(sql).run()); const cols = db.prepare("PRAGMA table_info(products)").all(); const names = new Set(cols.map(c => c.name)); for (const [name,type] of [["category_id","TEXT"],["brand","TEXT"],["sub_category","TEXT"],["floor","TEXT"],["warehouse","TEXT"],["active","INTEGER NOT NULL DEFAULT 1"],["master_values","TEXT NOT NULL DEFAULT '{}'"]]) { if (!names.has(name)) db.prepare(`ALTER TABLE products ADD COLUMN ${name} ${type}`).run(); } })();
     return db;
   } catch (error) {
     console.warn("SQLite unavailable; app can continue in browser/API mode.", error.message);
