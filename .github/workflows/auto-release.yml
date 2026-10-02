@@ -77,6 +77,8 @@ jobs:
 
       - name: Ensure Windows installer asset is published
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $installer = Get-ChildItem -Path release -Filter "*Setup*.exe" -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if (-not $installer) {
@@ -94,6 +96,8 @@ jobs:
 
       - name: Verify GitHub release and installer
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $maxAttempts = 12
           $delaySeconds = 10
@@ -102,7 +106,7 @@ jobs:
           for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
             Write-Host "Checking GitHub release assets (attempt $attempt/$maxAttempts)..."
             $assetNames = @(gh release view "$env:VERSION" --repo "$env:GITHUB_REPOSITORY" --json assets --template '{{range .assets}}{{println .name}}{{end}}')
-            $releaseInstaller = $assetNames | Where-Object { $_ -match '\.exe$' } | Select-Object -First 1
+            $releaseInstaller = $assetNames | Where-Object { $_ -match '.exe$' } | Select-Object -First 1
 
             if ($releaseInstaller) {
               Write-Host "Verified published installer asset: $releaseInstaller"
@@ -118,5 +122,3 @@ jobs:
           if (-not $verified) {
             throw "GitHub release $env:VERSION did not expose a Windows installer asset after waiting for publication."
           }
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
