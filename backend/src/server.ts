@@ -98,33 +98,25 @@ const masterTypes = {
 } as const;
 app.get("/api/master-data",authenticate,requirePermission("products"),async(req,res)=>{
   try{
-    const type=String(req.query.type||"") as keyof typeof masterTypes;
-    const meta=masterTypes[type];
-    if(!meta)return res.status(400).json({error:"Invalid master type"});
-    const {rows}=await pool.query(`SELECT id,name,TRUE AS active FROM ${meta.table} WHERE business_id=$1 ORDER BY name`,[req.user.businessId]);
-    res.json(rows);
+    const type=String(req.query.type||""); const meta=(masterTypes as any)[type];
+    if(meta){const {rows}=await pool.query(`SELECT id,name,TRUE AS active FROM ${meta.table} WHERE business_id=$1 ORDER BY name`,[req.user.businessId]);return res.json(rows);}
+    const t=await pool.query("SELECT id FROM master_data_types WHERE id=$1 AND business_id=$2 AND active=true",[type,req.user.businessId]);
+    if(!t.rowCount)return res.status(400).json({error:"Invalid master type"});
+    const {rows}=await pool.query("SELECT id,name,active FROM master_data_items WHERE type_id=$1 AND business_id=$2 ORDER BY name",[type,req.user.businessId]); res.json(rows);
   }catch{res.status(500).json({error:"Unable to load master data"})}
 });
 app.post("/api/master-data",authenticate,requirePermission("products"),async(req,res)=>{
   try{
-    const type=String(req.body?.type||"") as keyof typeof masterTypes;
-    const meta=masterTypes[type]; const name=String(req.body?.name||"").trim();
-    if(!meta||!name)return res.status(400).json({error:"Invalid master data"});
-    const id=crypto.randomUUID();
-    if(type==="subCategories"){
-      const categoryId=req.body?.categoryId||null;
-      await pool.query("INSERT INTO sub_categories(id,business_id,category_id,name) VALUES($1,$2,$3,$4)",[id,req.user.businessId,categoryId,name]);
-    }else await pool.query(`INSERT INTO ${meta.table}(id,business_id,name) VALUES($1,$2,$3)`,[id,req.user.businessId,name]);
-    res.status(201).json({id,name,active:true});
-  }catch(e){res.status(409).json({error:"Master item already exists or could not be created"})}
+    const type=String(req.body?.type||""), meta=(masterTypes as any)[type], name=String(req.body?.name||"").trim(); if(!name)return res.status(400).json({error:"Invalid master data"}); const id=crypto.randomUUID();
+    if(meta){if(type==="subCategories"){await pool.query("INSERT INTO sub_categories(id,business_id,category_id,name) VALUES($1,$2,$3,$4)",[id,req.user.businessId,req.body?.categoryId||null,name]);}else await pool.query(`INSERT INTO ${meta.table}(id,business_id,name) VALUES($1,$2,$3)`,[id,req.user.businessId,name]);return res.status(201).json({id,name,active:true});}
+    const t=await pool.query("SELECT id FROM master_data_types WHERE id=$1 AND business_id=$2 AND active=true",[type,req.user.businessId]); if(!t.rowCount)return res.status(400).json({error:"Invalid master type"});
+    const r=await pool.query("INSERT INTO master_data_items(id,business_id,type_id,name) VALUES($1,$2,$3,$4) RETURNING id,name,active",[id,req.user.businessId,type,name]); res.status(201).json(r.rows[0]);
+  }catch{res.status(409).json({error:"Master item already exists or could not be created"})}
 });
 app.put("/api/master-data/:type/:id",authenticate,requirePermission("products"),async(req,res)=>{
-  try{
-    const type=String(req.params.type) as keyof typeof masterTypes; const meta=masterTypes[type]; const name=String(req.body?.name||"").trim();
-    if(!meta||!name)return res.status(400).json({error:"Invalid master data"});
-    const active=req.body?.active===undefined?undefined:Boolean(req.body.active);
-    const r=await pool.query(`UPDATE ${meta.table} SET name=$1, active=COALESCE($2,active) WHERE id=$3 AND business_id=$4 RETURNING id,name,active`,[name,active,req.params.id,req.user.businessId]);
-    if(!r.rowCount)return res.status(404).json({error:"Master item not found"}); res.json(r.rows[0]);
+  try{const type=String(req.params.type),meta=(masterTypes as any)[type],name=String(req.body?.name||"").trim();if(!name)return res.status(400).json({error:"Invalid master data"});const active=req.body?.active===undefined?undefined:Boolean(req.body.active);
+    if(meta){const r=await pool.query(`UPDATE ${meta.table} SET name=$1, active=COALESCE($2,active) WHERE id=$3 AND business_id=$4 RETURNING id,name,active`,[name,active,req.params.id,req.user.businessId]);if(!r.rowCount)return res.status(404).json({error:"Master item not found"});return res.json(r.rows[0]);}
+    const r=await pool.query("UPDATE master_data_items SET name=$1,active=COALESCE($2,active) WHERE id=$3 AND business_id=$4 RETURNING id,name,active",[name,active,req.params.id,req.user.businessId]);if(!r.rowCount)return res.status(404).json({error:"Master item not found"});res.json(r.rows[0]);
   }catch{res.status(409).json({error:"Master item could not be updated"})}
 });
 
