@@ -1,0 +1,1 @@
+Temporary CI verification for complete offline sync E2E.
