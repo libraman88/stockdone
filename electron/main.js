@@ -20,7 +20,7 @@ const OFFLINE_SCHEMA = [
   "CREATE TABLE IF NOT EXISTS master_data_items (id TEXT PRIMARY KEY, type_id TEXT NOT NULL, type_name TEXT NOT NULL, name TEXT NOT NULL, category_id TEXT, active INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS branches (id TEXT PRIMARY KEY, name TEXT NOT NULL, code TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS stock_transfers (id TEXT PRIMARY KEY, from_branch_id TEXT NOT NULL, to_branch_id TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, received_at TEXT)",
-  "CREATE TABLE IF NOT EXISTS stock_transfer_items (id TEXT PRIMARY KEY, transfer_id TEXT NOT NULL, variant_id TEXT NOT NULL, quantity INTEGER NOT NULL)"
+  "CREATE TABLE IF NOT EXISTS stock_transfer_items (id TEXT PRIMARY KEY, transfer_id TEXT NOT NULL, variant_id TEXT NOT NULL, quantity INTEGER NOT NULL)",
   "CREATE INDEX IF NOT EXISTS idx_sqlite_products_barcode ON products(barcode)",
   "CREATE INDEX IF NOT EXISTS idx_sqlite_products_updated ON products(updated_at)",
   "CREATE INDEX IF NOT EXISTS idx_sqlite_stock_product_date ON stock_movements(product_id,created_at)",
