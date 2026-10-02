@@ -80,7 +80,7 @@ async function offlineExec(sql:string, params:unknown[]=[]):Promise<void> {
 export async function getProducts() {
   try {
     const rows = await apiRequest<Product[]>("/products");
-    return rows.map((p: any) => ({...p, variantId: p.variantId || p.variant_id, reorderLevel: Number(p.reorderLevel ?? p.reorder_level ?? 5), qty: Number(p.qty ?? 0), cost: Number(p.cost ?? 0), price: Number(p.price ?? 0)}));
+    return rows.map((p: any) => ({...p, variantId: p.variantId || p.variant_id, masterValues:p.masterValues||p.master_values||{}, reorderLevel: Number(p.reorderLevel ?? p.reorder_level ?? 5), qty: Number(p.qty ?? 0), cost: Number(p.cost ?? 0), price: Number(p.price ?? 0)}));
   } catch (error) {
     if (!electronOffline() || !isNetworkFailure(error)) throw error;
     const rows = await offlineQuery<any>("SELECT id,name,sku,category,brand,sub_category AS subCategory,floor,warehouse,size,color,barcode,cost,price,qty,reorder_level AS reorderLevel FROM products WHERE COALESCE(active,1)=1 ORDER BY name");
@@ -88,7 +88,7 @@ export async function getProducts() {
   }
 }
 
-export async function updateProduct(id:string, product: Partial<Omit<Product,"id">>) { const body={...product,id}; try{return await apiRequest<{ok:boolean;id:string}>(`/products/${id}`,{method:"PUT",body:JSON.stringify({...body,categoryId:(product as any).categoryId||null})});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineProduct(body,"update");return {ok:true,id};} }
+export async function updateProduct(id:string, product: Partial<Omit<Product,"id">>) { const body={...product,id}; try{return await apiRequest<{ok:boolean;id:string}>(`/products/${id}`,{method:"PUT",body:JSON.stringify({...body,categoryId:(product as any).categoryId||null,masterValues:(product as any).masterValues||{}})});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineProduct(body,"update");return {ok:true,id};} }
 export async function deleteProduct(id:string){ try{return await apiRequest<{ok:boolean;id:string;archived:boolean}>(`/products/${id}`,{method:"DELETE"});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineProduct({id},"delete");return {ok:true,id,archived:true};} }
 
 export async function createProduct(product: Omit<Product,"id">) {
@@ -99,7 +99,7 @@ export async function createProduct(product: Omit<Product,"id">) {
       brand: product.brand || null, subCategory: product.subCategory || null, floor: product.floor || null, warehouse: product.warehouse || null,
       size: product.size || null, color: product.color || null,
       barcode: product.barcode || null, cost: product.cost,
-      price: product.price, qty: product.qty, reorderLevel: product.reorderLevel
+      price: product.price, qty: product.qty, reorderLevel: product.reorderLevel, masterValues:(product as any).masterValues||{}
     })
   });}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineProduct(product,"create");return {id:product.id,variantId:product.id};}}
 
