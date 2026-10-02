@@ -162,7 +162,7 @@ function ScannerSettingsPanel(){const [s,setS]=useState(getScannerSettings());co
 function MasterDataPanel(){
  const builtin=[{id:"categories",label:"Categories",icon:"CAT"},{id:"brands",label:"Brands",icon:"BR"},{id:"subCategories",label:"Sub-Categories",icon:"SUB"},{id:"floors",label:"Floors",icon:"FL"},{id:"warehouses",label:"Warehouses",icon:"WH"}];
  const [types,setTypes]=useState<any[]>([]),[selected,setSelected]=useState("categories"),[items,setItems]=useState<any[]>([]),[newType,setNewType]=useState(""),[newItem,setNewItem]=useState(""),[search,setSearch]=useState(""),[editing,setEditing]=useState<string|null>(null),[editName,setEditName]=useState(""),[editingType,setEditingType]=useState<string|null>(null),[editTypeName,setEditTypeName]=useState(""),[busy,setBusy]=useState(false);
- const loadTypes=async()=>{try{const x=await getMasterTypes();setTypes(x.length?x:builtin)}catch{setTypes(builtin)}};
+ const loadTypes=async()=>{try{const x=await getMasterTypes();const byId=new Map<string,any>();[...builtin,...x].forEach(t=>byId.set(t.id,{...(byId.get(t.id)||{}),...t}));setTypes(Array.from(byId.values()).filter(t=>t.active!==false))}catch{setTypes(builtin)}};
  const load=async()=>{try{setItems(await getMasterData(selected))}catch{setItems([])}};
  useEffect(()=>{void loadTypes()},[]);
  useEffect(()=>{void load()},[selected]);
