@@ -276,7 +276,7 @@ export async function syncPendingSales() {
 }
 
 export async function syncAllOfflinePending(){const results=await Promise.all([syncPendingSales(),syncPendingPurchases(),syncPendingCustomerPayments(),syncPendingReturns(),syncPendingExchanges(),syncPendingProductsAndMasters(),syncPendingStockTransfers(),syncPendingAdminMutations()]);return results.reduce((a,r)=>({synced:a.synced+r.synced,failed:a.failed+r.failed}),{synced:0,failed:0});}
-export async function getOfflineSyncQueueSummary(){if(!(await offlineDb.available()))return {pending:0,failed:0,synced:0,total:0};const rows=await offlineDb.query<any>("SELECT status,COUNT(*)::int AS count FROM sync_queue GROUP BY status");const m=Object.fromEntries(rows.map(r=>[r.status,Number(r.count)]));return {pending:m.pending||0,failed:m.failed||0,synced:m.synced||0,total:rows.reduce((n,r)=>n+Number(r.count),0)};}
+export async function getOfflineSyncQueueSummary(){if(!(await offlineDb.available()))return {pending:0,failed:0,synced:0,total:0};const rows=await offlineDb.query<any>("SELECT status,COUNT(*) AS count FROM sync_queue GROUP BY status");const m=Object.fromEntries(rows.map(r=>[r.status,Number(r.count)]));return {pending:m.pending||0,failed:m.failed||0,synced:m.synced||0,total:rows.reduce((n,r)=>n+Number(r.count),0)};}
 export async function retryAllOfflineSync(){if(!(await offlineDb.available()))return {synced:0,failed:0};await offlineDb.exec("UPDATE sync_queue SET status='pending',last_error=NULL WHERE status='failed'");return syncAllOfflinePending();}
 export function startOfflineSync(onSynced?: (count:number)=>void) {
   if(typeof window==="undefined")return()=>{};
