@@ -275,14 +275,16 @@ export async function syncPendingSales() {
   return{synced,failed};
 }
 
+export async function syncAllOfflinePending(){const results=await Promise.all([syncPendingSales(),syncPendingPurchases(),syncPendingCustomerPayments(),syncPendingReturns(),syncPendingExchanges(),syncPendingProductsAndMasters(),syncPendingStockTransfers(),syncPendingAdminMutations()]);return results.reduce((a,r)=>({synced:a.synced+r.synced,failed:a.failed+r.failed}),{synced:0,failed:0});}
+export async function getOfflineSyncQueueSummary(){if(!(await offlineDb.available()))return {pending:0,failed:0,synced:0,total:0};const rows=await offlineDb.query<any>("SELECT status,COUNT(*)::int AS count FROM sync_queue GROUP BY status");const m=Object.fromEntries(rows.map(r=>[r.status,Number(r.count)]));return {pending:m.pending||0,failed:m.failed||0,synced:m.synced||0,total:rows.reduce((n,r)=>n+Number(r.count),0)};}
+export async function retryAllOfflineSync(){if(!(await offlineDb.available()))return {synced:0,failed:0};await offlineDb.exec("UPDATE sync_queue SET status='pending',last_error=NULL WHERE status='failed'");return syncAllOfflinePending();}
 export function startOfflineSync(onSynced?: (count:number)=>void) {
   if(typeof window==="undefined")return()=>{};
   let running=false;
   const run=()=>{
     if(running)return;
     running=true;
-    void Promise.all([syncPendingSales(),syncPendingPurchases(),syncPendingCustomerPayments(),syncPendingReturns(),syncPendingExchanges(),syncPendingProductsAndMasters(),syncPendingStockTransfers(),syncPendingAdminMutations()])
-      .then(results=>{const synced=results.reduce((total,result)=>total+result.synced,0);if(synced>0)onSynced?.(synced)})
+    void syncAllOfflinePending().then(result=>{if(result.synced>0)onSynced?.(result.synced)})
       .finally(()=>{running=false});
   };
   window.addEventListener("online",run);
