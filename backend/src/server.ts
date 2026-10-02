@@ -45,10 +45,14 @@ const cmtJobUpdateSchema=z.object({status:z.enum(["open","sent","received","clos
 app.put("/api/garments/cmt-jobs/:id",authenticate,requirePermission("inventory"),async(req,res)=>{
   const p=cmtJobUpdateSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:"Invalid CMT job update"});
   try{
-    const r=await pool.query("UPDATE cmt_jobs SET status=$1,pieces_received=COALESCE($2,pieces_received),notes=$3 WHERE id=$4 AND business_id=$5 RETURNING id,supplier_id AS \"supplierId\",fabric_lot_id AS \"fabricLotId\",meters_sent AS \"metersSent\",pieces_received AS \"piecesReceived\",job_date AS \"jobDate\",status,notes,created_at",[p.data.status,p.data.piecesReceived,p.data.notes??null,req.params.id,req.user.businessId]);
-    if(!r.rowCount)return res.status(404).json({error:"CMT job not found"});
+    const current=await pool.query("SELECT id,status,pieces_received FROM cmt_jobs WHERE id=$1 AND business_id=$2 FOR UPDATE",[req.params.id,req.user.businessId]);
+    if(!current.rowCount)return res.status(404).json({error:"CMT job not found"});
+    const nextPieces=p.data.piecesReceived??Number(current.rows[0].pieces_received||0);
+    if(current.rows[0].status==="closed" && p.data.status!=="closed")return res.status(409).json({error:"CLOSED_JOB_CANNOT_REOPEN"});
+    if((p.data.status==="received"||p.data.status==="closed") && nextPieces<=0)return res.status(409).json({error:"NO_PIECES_RECEIVED"});
+    const r=await pool.query("UPDATE cmt_jobs SET status=$1,pieces_received=$2,notes=$3 WHERE id=$4 AND business_id=$5 RETURNING id,supplier_id AS \"supplierId\",fabric_lot_id AS \"fabricLotId\",meters_sent AS \"metersSent\",pieces_received AS \"piecesReceived\",job_date AS \"jobDate\",status,notes,created_at",[p.data.status,nextPieces,p.data.notes??null,req.params.id,req.user.businessId]);
     res.json(r.rows[0]);
-  }catch{res.status(500).json({error:"Unable to update CMT job"})}
+  }catch(e){res.status(500).json({error:"Unable to update CMT job"})}
 });
 
 const finishedStockSchema=z.object({id:z.string().uuid().optional(),jobId:z.string().uuid(),variantId:z.string().uuid()});
@@ -76,7 +80,7 @@ app.post("/api/garments/finished-stock",authenticate,requirePermission("inventor
     const inv=await client.query("SELECT id FROM inventory WHERE branch_id=$1 AND variant_id=$2 FOR UPDATE",[req.user.branchId,p.data.variantId]);
     if(inv.rowCount)await client.query("UPDATE inventory SET quantity=quantity+$1 WHERE branch_id=$2 AND variant_id=$3",[pieces,req.user.branchId,p.data.variantId]);
     else await client.query("INSERT INTO inventory(id,branch_id,variant_id,quantity,reorder_level) VALUES($1,$2,$3,$4,5)",[crypto.randomUUID(),req.user.branchId,p.data.variantId,pieces]);
-    const movementId=crypto.randomUUID();
+    const movementId=receiptId||crypto.randomUUID();
     await client.query("INSERT INTO stock_movements(id,branch_id,variant_id,type,quantity,reason,reference_id) VALUES($1,$2,$3,'production_in',$4,'Finished garment production',$5)",[movementId,req.user.branchId,p.data.variantId,pieces,p.data.jobId]);
     await client.query("UPDATE cmt_jobs SET status='received' WHERE id=$1",[p.data.jobId]);
     await client.query("COMMIT");
