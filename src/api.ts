@@ -255,7 +255,8 @@ export async function getAdminRoles(){
   catch(error){
     if(!electronOffline()||!isNetworkFailure(error))throw error;
     const permissions=["admin","customers","inventory","products","purchases","reports","returns","sales","settings","users"];
-    return [
+    const custom=await offlineQuery<any>("SELECT id,name,permissions FROM admin_roles ORDER BY created_at");
+    return [...custom.map(r=>({id:r.id,name:r.name,permissions:JSON.parse(r.permissions||"[]")})),
       {id:"offline-owner",name:"owner",permissions},
       {id:"offline-manager",name:"manager",permissions:["sales","products","inventory","purchases","customers","returns","reports"]},
       {id:"offline-cashier",name:"cashier",permissions:["sales","customers"]}
