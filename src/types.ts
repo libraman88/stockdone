@@ -15,6 +15,7 @@ export type Product = {
   price: number;
   qty: number;
   reorderLevel: number;
+  masterValues?: Record<string,string>;
 };
 
 export type StockMovement = {
