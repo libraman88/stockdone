@@ -1,4 +1,5 @@
 import { authStorage } from "./auth";
+import { queueOfflineProduct, queueOfflineMasterMutation, cacheOfflineMasterTypes, cacheOfflineMasterItems, getCachedMasterItems } from "./offlineDb";
 import type { Product } from "./types";
 
 const configuredApiUrl = String(import.meta.env.VITE_API_URL || "").trim().replace(/\/$/, "");
@@ -87,11 +88,11 @@ export async function getProducts() {
   }
 }
 
-export function updateProduct(id:string, product: Partial<Omit<Product,"id">>) { return apiRequest<{ok:boolean;id:string}>(`/products/${id}`, {method:"PUT", body:JSON.stringify({name:product.name,sku:product.sku,categoryId:(product as any).categoryId||null,brand:product.brand||null,subCategory:product.subCategory||null,floor:product.floor||null,warehouse:product.warehouse||null,size:product.size||null,color:product.color||null,barcode:product.barcode||null,cost:product.cost,price:product.price,qty:product.qty,reorderLevel:product.reorderLevel})}); }
-export function deleteProduct(id:string){ return apiRequest<{ok:boolean;id:string;archived:boolean}>(`/products/${id}`,{method:"DELETE"}); }
+export async function updateProduct(id:string, product: Partial<Omit<Product,"id">>) { const body={...product,id}; try{return await apiRequest<{ok:boolean;id:string}>(`/products/${id}`,{method:"PUT",body:JSON.stringify({...body,categoryId:(product as any).categoryId||null})});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineProduct(body,"update");return {ok:true,id};} }
+export async function deleteProduct(id:string){ try{return await apiRequest<{ok:boolean;id:string;archived:boolean}>(`/products/${id}`,{method:"DELETE"});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineProduct({id},"delete");return {ok:true,id,archived:true};} }
 
-export function createProduct(product: Omit<Product,"id">) {
-  return apiRequest<{id:string;variantId:string}>("/products", {
+export async function createProduct(product: Omit<Product,"id">) {
+  try{return await apiRequest<{id:string;variantId:string}>("/products", {
     method: "POST",
     body: JSON.stringify({
       name: product.name, sku: product.sku, categoryId: (product as any).categoryId || null,
@@ -100,8 +101,7 @@ export function createProduct(product: Omit<Product,"id">) {
       barcode: product.barcode || null, cost: product.cost,
       price: product.price, qty: product.qty, reorderLevel: product.reorderLevel
     })
-  });
-}
+  });}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineProduct(product,"create");return {id:product.id,variantId:product.id};}}
 
 export type ApiSaleItem = { variantId: string; qty: number; price: number };
 export function createSale(input: { invoiceNo: string; clientReference?: string; paymentMethod: "cash"|"card"|"bank"|"other"; discount: number; customerId?: string; received?: number; change?: number; items: ApiSaleItem[] }) {
@@ -382,4 +382,8 @@ export async function getFinishedStock(){
 }
 
 
-export type MasterType={id:string;name:string;label:string;active:boolean;builtin?:boolean};export type MasterItem={id:string;name:string;active:boolean;categoryId?:string|null};export const getMasterTypes=()=>apiRequest<MasterType[]>("/master-data/types");export const createMasterType=(label:string)=>apiRequest<MasterType>("/master-data/types",{method:"POST",body:JSON.stringify({label})});export const getMasterData=(type:string)=>apiRequest<MasterItem[]>(`/master-data?type=${encodeURIComponent(type)}`);export const createMasterData=(input:{type:string;name:string;categoryId?:string|null})=>apiRequest<MasterItem>("/master-data",{method:"POST",body:JSON.stringify(input)});export const updateMasterData=(type:string,id:string,input:{name:string;active?:boolean;categoryId?:string|null})=>apiRequest<MasterItem>(`/master-data/${encodeURIComponent(type)}/${id}`,{method:"PUT",body:JSON.stringify(input)});
+export type MasterType={id:string;name:string;label:string;active:boolean;builtin?:boolean};export type MasterItem={id:string;name:string;active:boolean;categoryId?:string|null};export async function getMasterTypes(){try{const r=await apiRequest<MasterType[]>("/master-data/types");await cacheOfflineMasterTypes(r);return r;}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;return offlineQuery<any>("SELECT id,name,label,active,builtin FROM master_data_types ORDER BY label");}}
+export async function createMasterType(label:string){const input={label};try{const r=await apiRequest<MasterType>("/master-data/types",{method:"POST",body:JSON.stringify(input)});await cacheOfflineMasterTypes([r]);return r;}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const id=crypto.randomUUID(),name=label.toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"");await queueOfflineMasterMutation({entity:"master_type",operation:"create",type:name,id,name,label,active:true});return {id,name,label,active:true,builtin:false};}}
+export async function getMasterData(type:string){try{const r=await apiRequest<MasterItem[]>(`/master-data?type=${encodeURIComponent(type)}`);await cacheOfflineMasterItems(type,r);return r;}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;return getCachedMasterItems(type);}}
+export async function createMasterData(input:{type:string;name:string;categoryId?:string|null}){try{const r=await apiRequest<MasterItem>("/master-data",{method:"POST",body:JSON.stringify(input)});await cacheOfflineMasterItems(input.type,[r]);return r;}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const id=crypto.randomUUID();await queueOfflineMasterMutation({entity:"master_item",operation:"create",type:input.type,id,name:input.name,active:true,categoryId:input.categoryId??null});return {id,name:input.name,active:true,categoryId:input.categoryId??null};}}
+export async function updateMasterData(type:string,id:string,input:{name:string;active?:boolean;categoryId?:string|null}){try{return await apiRequest<MasterItem>(`/master-data/${encodeURIComponent(type)}/${id}`,{method:"PUT",body:JSON.stringify(input)});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineMasterMutation({entity:"master_item",operation:"update",type,id,name:input.name,active:input.active,categoryId:input.categoryId??null});return {id,name:input.name,active:input.active!==false,categoryId:input.categoryId??null};}}
