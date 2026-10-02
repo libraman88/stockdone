@@ -1,5 +1,5 @@
 import { authStorage } from "./auth";
-import { queueOfflineProduct, queueOfflineMasterMutation, cacheOfflineMasterTypes, cacheOfflineMasterItems, getCachedMasterItems, queueOfflineStockTransfer, queueOfflineTransferReceive, getCachedStockTransfers, queueOfflineAdminMutation } from "./offlineDb";
+import { queueOfflineProduct, queueOfflineMasterMutation, cacheOfflineMasterTypes, cacheOfflineMasterItems, getCachedMasterItems, queueOfflineStockTransfer, queueOfflineTransferReceive, getCachedStockTransfers, queueOfflineAdminMutation, queueOfflineRawMaterial, queueOfflineFabricLot, queueOfflineCmtJob, queueOfflineCmtJobUpdate, queueOfflineFinishedStock } from "./offlineDb";
 import type { Product } from "./types";
 
 const configuredApiUrl = String(import.meta.env.VITE_API_URL || "").trim().replace(/\/$/, "");
@@ -349,7 +349,7 @@ export async function getRawMaterials(){
   }
 }
 
-export function createRawMaterial(input:{name:string;supplierId?:string|null;unit:string;quantity:number;cost:number;location?:string|null}){return apiRequest<RawMaterial>("/garments/raw-materials",{method:"POST",body:JSON.stringify(input)});}
+export async function createRawMaterial(input:{id?:string;name:string;supplierId?:string|null;unit:string;quantity:number;cost:number;location?:string|null}){const payload={...input,id:input.id||crypto.randomUUID()};try{return await apiRequest<RawMaterial>("/garments/raw-materials",{method:"POST",body:JSON.stringify(payload)})}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineRawMaterial(payload);return {...payload,created_at:new Date().toISOString()} as RawMaterial;}}
 export async function getFabricLots(){
   try{return await apiRequest<FabricLot[]>("/garments/fabric-lots");}
   catch(error){
@@ -359,7 +359,7 @@ export async function getFabricLots(){
   }
 }
 
-export function createFabricLot(input:{rawMaterialId:string;lotNumber:string;meterQuantity:number;cost:number;location?:string|null}){return apiRequest<FabricLot>("/garments/fabric-lots",{method:"POST",body:JSON.stringify(input)});}
+export async function createFabricLot(input:{id?:string;rawMaterialId:string;lotNumber:string;meterQuantity:number;cost:number;location?:string|null}){const payload={...input,id:input.id||crypto.randomUUID()};try{return await apiRequest<FabricLot>("/garments/fabric-lots",{method:"POST",body:JSON.stringify(payload)})}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineFabricLot(payload);return {...payload,created_at:new Date().toISOString()} as FabricLot;}}
 export async function getCmtJobs(){
   try{return await apiRequest<CmtJob[]>("/garments/cmt-jobs");}
   catch(error){
@@ -369,10 +369,11 @@ export async function getCmtJobs(){
   }
 }
 
-export function createCmtJob(input:{supplierId?:string|null;fabricLotId?:string|null;metersSent:number;piecesReceived:number;jobDate?:string;status:CmtJob["status"];notes?:string|null}){return apiRequest<CmtJob>("/garments/cmt-jobs",{method:"POST",body:JSON.stringify(input)} );}
-export function updateCmtJob(id:string,input:{status:CmtJob["status"];piecesReceived?:number;notes?:string|null}){return apiRequest<CmtJob>("/garments/cmt-jobs/"+id,{method:"PUT",body:JSON.stringify(input)});}
+export async function createCmtJob(input:{id?:string;supplierId?:string|null;fabricLotId?:string|null;metersSent:number;piecesReceived:number;jobDate?:string;status:CmtJob["status"];notes?:string|null}){const payload={...input,id:input.id||crypto.randomUUID()};try{return await apiRequest<CmtJob>("/garments/cmt-jobs",{method:"POST",body:JSON.stringify(payload)})}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineCmtJob(payload);return {...payload,jobDate:payload.jobDate||new Date().toISOString(),created_at:new Date().toISOString()} as CmtJob;}}
+export async function updateCmtJob(id:string,input:{status:CmtJob["status"];piecesReceived?:number;notes?:string|null}){try{return await apiRequest<CmtJob>("/garments/cmt-jobs/"+id,{method:"PUT",body:JSON.stringify(input)})}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineCmtJobUpdate({id,...input});return {...input,id} as CmtJob;}}
 export type FinishedStockReceipt={id:string;jobId:string;variantId:string;productName:string;sku:string;size:string|null;color:string|null;quantity:number;createdAt:string};
-export function receiveFinishedStock(input:{jobId:string;variantId:string}){return apiRequest<FinishedStockReceipt>("/garments/finished-stock",{method:"POST",body:JSON.stringify(input)});}
+export async function receiveFinishedStock(input:{id?:string;jobId:string;variantId:string}){const payload={...input,id:input.id||crypto.randomUUID()};try{return await apiRequest<FinishedStockReceipt>("/garments/finished-stock",{method:"POST",body:JSON.stringify(payload)})}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const jobs=await getCmtJobs();const job=jobs.find(x=>x.id===payload.jobId);if(!job||Number(job.piecesReceived)<=0)throw new Error("CMT job is not ready offline.");const products=await getProducts();const product=products.find((x:any)=>(x.variantId||x.id)===payload.variantId);if(!product)throw new Error("Finished product is not available offline.");await queueOfflineFinishedStock({id:payload.id,jobId:payload.jobId,variantId:payload.variantId,quantity:Number(job.piecesReceived),productName:product.name,sku:product.sku,size:product.size,color:product.color});return {id:payload.id,jobId:payload.jobId,variantId:payload.variantId,productName:product.name,sku:product.sku,size:product.size,color:product.color,quantity:Number(job.piecesReceived),createdAt:new Date().toISOString()};}
+}
 export async function getFinishedStock(){
   try{return await apiRequest<FinishedStockReceipt[]>("/garments/finished-stock");}
   catch(error){
