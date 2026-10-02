@@ -20,6 +20,38 @@ export async function cacheProduct(product:{id:string;name:string;sku:string;cat
 }
 export async function cacheProducts(products:Parameters<typeof cacheProduct>[0][]) { for(const p of products)await cacheProduct(p); }
 
+export async function cacheOfflineMasterTypes(types:{id:string;name:string;label:string;active:boolean;builtin?:boolean}[]){
+  if(!(await offlineDb.available()))return; const now=new Date().toISOString();
+  for(const t of types) await offlineDb.exec("INSERT INTO master_data_types(id,name,label,active,builtin) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,label=excluded.label,active=excluded.active,builtin=excluded.builtin",[t.id,t.name,t.label,t.active===false?0:1,t.builtin?1:0]);
+}
+export async function cacheOfflineMasterItems(type:string,items:{id:string;name:string;active:boolean;categoryId?:string|null}[]){
+  if(!(await offlineDb.available()))return; const now=new Date().toISOString();
+  for(const x of items) await offlineDb.exec("INSERT INTO master_data_items(id,type_id,type_name,name,category_id,active,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET type_id=excluded.type_id,type_name=excluded.type_name,name=excluded.name,category_id=excluded.category_id,active=excluded.active,updated_at=excluded.updated_at",[x.id,type,type,x.name,x.categoryId??null,x.active===false?0:1,now]);
+}
+export async function getCachedMasterItems(type:string){if(!(await offlineDb.available()))return [];return offlineDb.query<any>("SELECT id,name,active,category_id AS categoryId FROM master_data_items WHERE type_name=? AND active=1 ORDER BY name",[type]);}
+
+export async function queueOfflineProduct(product:any,operation:"create"|"update"|"delete"){
+  if(!(await offlineDb.available()))throw new Error("Offline database is unavailable."); const s=authStorage.getSession(); if(!s?.businessId||!s?.branchId)throw new Error("Offline product mutation requires branch context.");
+  const now=new Date().toISOString(); const active=operation==="delete"?0:1; const p={...product,businessId:s.businessId,branchId:s.branchId,active};
+  await offlineDb.exec("BEGIN"); try{
+    if(operation==="delete") await offlineDb.exec("UPDATE products SET active=0,updated_at=? WHERE id=?",[now,product.id]);
+    else await offlineDb.exec("INSERT INTO products(id,name,sku,category,category_id,brand,sub_category,floor,warehouse,size,color,barcode,cost,price,qty,reorder_level,active,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,sku=excluded.sku,category=excluded.category,category_id=excluded.category_id,brand=excluded.brand,sub_category=excluded.sub_category,floor=excluded.floor,warehouse=excluded.warehouse,size=excluded.size,color=excluded.color,barcode=excluded.barcode,cost=excluded.cost,price=excluded.price,qty=excluded.qty,reorder_level=excluded.reorder_level,active=excluded.active,updated_at=excluded.updated_at",[product.id,product.name,product.sku,product.category??null,product.categoryId??null,product.brand??null,product.subCategory??null,product.floor??null,product.warehouse??null,product.size??null,product.color??null,product.barcode??null,product.cost??0,product.price??0,product.qty??0,product.reorderLevel??5,active,now]);
+    await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"product",product.id,operation,JSON.stringify(p),now,"pending"]); await offlineDb.exec("COMMIT");
+  }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
+}
+export async function queueOfflineMasterMutation(input:{entity:"master_type"|"master_item";operation:"create"|"update";type:string;id:string;name:string;label?:string;active?:boolean;categoryId?:string|null}){
+  if(!(await offlineDb.available()))throw new Error("Offline database is unavailable."); const s=authStorage.getSession(); if(!s?.businessId||!s?.branchId)throw new Error("Offline master mutation requires branch context."); const now=new Date().toISOString();
+  await offlineDb.exec("BEGIN"); try{
+    if(input.entity==="master_type") await offlineDb.exec("INSERT INTO master_data_types(id,name,label,active,builtin) VALUES(?,?,?,?,0) ON CONFLICT(id) DO UPDATE SET name=excluded.name,label=excluded.label,active=excluded.active",[input.id,input.name,input.label||input.name,input.active===false?0:1]);
+    else await offlineDb.exec("INSERT INTO master_data_items(id,type_id,type_name,name,category_id,active,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET type_id=excluded.type_id,type_name=excluded.type_name,name=excluded.name,category_id=excluded.category_id,active=excluded.active,updated_at=excluded.updated_at",[input.id,input.type,input.type,input.name,input.categoryId??null,input.active===false?0:1,now]);
+    await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),input.entity,input.id,input.operation,JSON.stringify({...input,businessId:s.businessId,branchId:s.branchId}),now,"pending"]); await offlineDb.exec("COMMIT");
+  }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
+}
+export async function syncPendingProductsAndMasters(){
+ if(!isOnline()||!(await offlineDb.available()))return{synced:0,failed:0}; const rows=await offlineDb.query<any>("SELECT id,entity,entity_id,operation,payload FROM sync_queue WHERE entity IN ('product','master_type','master_item') AND status='pending' ORDER BY created_at"); let synced=0,failed=0;
+ for(const row of rows)try{const p=JSON.parse(row.payload),s=authStorage.getSession();if(!s?.businessId||!s?.branchId||p.businessId!==s.businessId||p.branchId!==s.branchId)continue; let path="",body:any=p,method=row.operation==="create"?"POST":"PUT"; if(row.entity==="product"){path=row.operation==="create"?"/products":row.operation==="delete"?"/products/"+row.entity_id:"/products/"+row.entity_id;method=row.operation==="delete"?"DELETE":method;} else if(row.entity==="master_type"){path=row.operation==="create"?"/master-data/types":"/master-data/types/"+row.entity_id;} else {path="/master-data/"+encodeURIComponent(p.type)+"/"+row.entity_id;} await apiRequest(path,{method,body:method==="DELETE"?undefined:JSON.stringify(body)}); await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;}catch(e){const msg=e instanceof Error?e.message:"Offline mutation sync failed",status=e instanceof ApiError?e.status:0;const permanent=status>=400&&status<500&&status!==401&&status!==408&&status!==429;await offlineDb.exec("UPDATE sync_queue SET status=?,attempts=attempts+1,last_error=? WHERE id=?",[permanent?"failed":"pending",msg,row.id]);failed++;} return{synced,failed};
+}
+
 export async function getCachedProducts() {
   if(!(await offlineDb.available())) return [];
   return offlineDb.query<{
@@ -241,7 +273,7 @@ export function startOfflineSync(onSynced?: (count:number)=>void) {
   const run=()=>{
     if(running)return;
     running=true;
-    void Promise.all([syncPendingSales(),syncPendingPurchases(),syncPendingCustomerPayments(),syncPendingReturns(),syncPendingExchanges()])
+    void Promise.all([syncPendingSales(),syncPendingPurchases(),syncPendingCustomerPayments(),syncPendingReturns(),syncPendingExchanges(),syncPendingProductsAndMasters()])
       .then(results=>{const synced=results.reduce((total,result)=>total+result.synced,0);if(synced>0)onSynced?.(synced)})
       .finally(()=>{running=false});
   };
