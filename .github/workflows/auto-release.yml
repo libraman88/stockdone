@@ -75,6 +75,23 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Ensure Windows installer asset is published
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path release -Filter "*Setup*.exe" -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $installer) {
+            throw "Windows installer was not produced by the publish build."
+          }
+
+          $assetNames = @(gh release view "$env:VERSION" --repo "$env:GITHUB_REPOSITORY" --json assets --template '{{range .assets}}{{println .name}}{{end}}')
+          $expectedAsset = "StockDone-Setup-$($env:VERSION_NUMBER).exe"
+          $published = $assetNames | Where-Object { $_ -eq $expectedAsset } | Select-Object -First 1
+
+          if (-not $published) {
+            Write-Host "Installer asset is not exposed by the release yet. Uploading it explicitly: $($installer.FullName)"
+            gh release upload "$env:VERSION" "$($installer.FullName)" --repo "$env:GITHUB_REPOSITORY" --clobber
+          }
+
       - name: Verify GitHub release and installer
         shell: pwsh
         run: |
