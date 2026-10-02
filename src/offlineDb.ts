@@ -28,7 +28,7 @@ export async function cacheOfflineMasterItems(type:string,items:{id:string;name:
   if(!(await offlineDb.available()))return; const now=new Date().toISOString();
   for(const x of items) await offlineDb.exec("INSERT INTO master_data_items(id,type_id,type_name,name,category_id,active,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET type_id=excluded.type_id,type_name=excluded.type_name,name=excluded.name,category_id=excluded.category_id,active=excluded.active,updated_at=excluded.updated_at",[x.id,type,type,x.name,x.categoryId??null,x.active===false?0:1,now]);
 }
-export async function getCachedMasterItems(type:string){if(!(await offlineDb.available()))return [];return offlineDb.query<any>("SELECT id,name,active,category_id AS categoryId FROM master_data_items WHERE type_name=? AND active=1 ORDER BY name",[type]);}
+export async function getCachedMasterItems(type:string){if(!(await offlineDb.available()))return [];return offlineDb.query<any>("SELECT id,name,active,category_id AS categoryId FROM master_data_items WHERE type_name=? ORDER BY active DESC,name",[type]);}
 
 export async function queueOfflineProduct(product:any,operation:"create"|"update"|"delete"){
   if(!(await offlineDb.available()))throw new Error("Offline database is unavailable."); const s=authStorage.getSession(); if(!s?.businessId||!s?.branchId)throw new Error("Offline product mutation requires branch context.");
