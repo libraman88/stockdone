@@ -13,10 +13,10 @@ export const offlineDb = {
 
 export async function resetOfflineTransactionalData(){if(!(await offlineDb.available()))return;await offlineDb.exec("BEGIN");try{for(const t of ["sale_items","sales","purchase_items","purchases","supplier_transactions","stock_movements","sync_queue","sync_conflicts"]){await offlineDb.exec(`DELETE FROM ${t}`)}await offlineDb.exec("UPDATE products SET qty=0,updated_at=?",[new Date().toISOString()]);await offlineDb.exec("COMMIT")}catch(e){await offlineDb.exec("ROLLBACK");throw e}}
 
-export async function cacheProduct(product:{id:string;name:string;sku:string;category?:string|null;size?:string|null;color?:string|null;barcode?:string|null;cost:number;price:number;qty:number;reorderLevel:number}) {
+export async function cacheProduct(product:{id:string;name:string;sku:string;category?:string|null;size?:string|null;color?:string|null;barcode?:string|null;cost:number;price:number;qty:number;reorderLevel:number;masterValues?:Record<string,string>}) {
   if(!(await offlineDb.available()))return;
   const now=new Date().toISOString();
-  await offlineDb.exec(`INSERT INTO products(id,name,sku,category,size,color,barcode,cost,price,qty,reorder_level,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,sku=excluded.sku,category=excluded.category,size=excluded.size,color=excluded.color,barcode=excluded.barcode,cost=excluded.cost,price=excluded.price,qty=excluded.qty,reorder_level=excluded.reorder_level,updated_at=excluded.updated_at`,[product.id,product.name,product.sku,product.category??null,product.size??null,product.color??null,product.barcode??null,product.cost,product.price,product.qty,product.reorderLevel,now]);
+  await offlineDb.exec(`INSERT INTO products(id,name,sku,category,size,color,barcode,cost,price,qty,reorder_level,master_values,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,sku=excluded.sku,category=excluded.category,size=excluded.size,color=excluded.color,barcode=excluded.barcode,cost=excluded.cost,price=excluded.price,qty=excluded.qty,reorder_level=excluded.reorder_level,master_values=excluded.master_values,updated_at=excluded.updated_at`,[product.id,product.name,product.sku,product.category??null,product.size??null,product.color??null,product.barcode??null,product.cost,product.price,product.qty,product.reorderLevel,JSON.stringify(product.masterValues||{}),now]);
 }
 export async function cacheProducts(products:Parameters<typeof cacheProduct>[0][]) { for(const p of products)await cacheProduct(p); }
 
@@ -64,8 +64,8 @@ export async function getCachedProducts() {
   if(!(await offlineDb.available())) return [];
   return offlineDb.query<{
     id:string;name:string;sku:string;category:string|null;size:string|null;color:string|null;
-    barcode:string|null;cost:number;price:number;qty:number;reorder_level:number
-  }>("SELECT id,name,sku,category,size,color,barcode,cost,price,qty,reorder_level FROM products ORDER BY name");
+    barcode:string|null;cost:number;price:number;qty:number;reorder_level:number;master_values:string
+  }>("SELECT id,name,sku,category,size,color,barcode,cost,price,qty,reorder_level,master_values FROM products ORDER BY name");
 }
 
 export async function queueOfflineSale(sale:{id:string;invoiceNo:string;total:number;paymentMethod:string;discount:number;customerId?:string|null;received?:number;change?:number;businessId?:string;branchId?:string;items:{id:string;productId:string;qty:number;price:number;unitCost:number}[]}) {
