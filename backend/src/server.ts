@@ -111,7 +111,7 @@ app.get("/api/master-data",authenticate,requirePermission("products"),async(req,
   try{
     const type=String(req.query.type||""); const meta=(masterTypes as any)[type];
     if(meta){const {rows}=await pool.query(`SELECT id,name,active FROM ${meta.table} WHERE business_id=$1 ORDER BY name`,[req.user.businessId]);return res.json(rows);}
-    const t=await pool.query("SELECT id FROM master_data_types WHERE id=$1 AND business_id=$2 AND active=true",[type,req.user.businessId]);
+    const t=await pool.query("SELECT id FROM master_data_types WHERE id=$1 AND business_id=$2",[type,req.user.businessId]);
     if(!t.rowCount)return res.status(400).json({error:"Invalid master type"});
     const {rows}=await pool.query("SELECT id,name,active FROM master_data_items WHERE type_id=$1 AND business_id=$2 ORDER BY name",[type,req.user.businessId]); res.json(rows);
   }catch{res.status(500).json({error:"Unable to load master data"})}
