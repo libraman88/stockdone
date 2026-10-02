@@ -1,5 +1,5 @@
 import { authStorage } from "./auth";
-import { queueOfflineProduct, queueOfflineMasterMutation, cacheOfflineMasterTypes, cacheOfflineMasterItems, getCachedMasterItems } from "./offlineDb";
+import { queueOfflineProduct, queueOfflineMasterMutation, cacheOfflineMasterTypes, cacheOfflineMasterItems, getCachedMasterItems, queueOfflineStockTransfer, queueOfflineTransferReceive, getCachedStockTransfers } from "./offlineDb";
 import type { Product } from "./types";
 
 const configuredApiUrl = String(import.meta.env.VITE_API_URL || "").trim().replace(/\/$/, "");
@@ -304,14 +304,14 @@ export function createVariant(productId:string,input:{size?:string;color?:string
 
 export function adjustInventory(input:{variantId:string;quantityDelta:number;reason:"Damaged"|"Missing"|"Physical Count"|"Correction"|"Other";note?:string}){return apiRequest<{id:string;quantity:number}>("/inventory/adjustments",{method:"POST",body:JSON.stringify(input)});}
 
-export function createStockTransfer(input:{toBranchId:string;items:{variantId:string;quantity:number}[]}){return apiRequest<{id:string;status:string}>("/inventory/transfers",{method:"POST",body:JSON.stringify(input)});}
+export async function createStockTransfer(input:{toBranchId:string;items:{variantId:string;quantity:number}[]}){const id=crypto.randomUUID();try{return await apiRequest<{id:string;status:string}>("/inventory/transfers",{method:"POST",body:JSON.stringify({...input,id})});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineStockTransfer({id,...input});return {id,status:"sent"};}}
 
 export type Branch={id:string;name:string;code:string};
 export async function getBranches(){try{return await apiRequest<Branch[]>("/branches");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;return JSON.parse(localStorage.getItem("stockdone.branches")||"[]");}}
 export async function createBranch(input:{name:string;code:string}){try{return await apiRequest<Branch>("/branches",{method:"POST",body:JSON.stringify(input)});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const b={id:crypto.randomUUID(),name:input.name,code:input.code};const rows:Branch[]=JSON.parse(localStorage.getItem("stockdone.branches")||"[]");localStorage.setItem("stockdone.branches",JSON.stringify([...rows,b]));return b;}}
-export function receiveStockTransfer(id:string){return apiRequest<{id:string;status:string}>(`/inventory/transfers/${id}/receive`,{method:"POST"});}
+export async function receiveStockTransfer(id:string){try{return await apiRequest<{id:string;status:string}>(`/inventory/transfers/${id}/receive`,{method:"POST"});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineTransferReceive(id);return {id,status:"received"};}}
 
-export function getStockTransfers(){return apiRequest<any[]>("/inventory/transfers");}
+export async function getStockTransfers(){try{return await apiRequest<any[]>("/inventory/transfers");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;return getCachedStockTransfers();}}
 
 export async function getPurchases(){try{return await apiRequest<any[]>("/purchases");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const rows=await offlineQuery<any>("SELECT id,invoice_no,supplier_id,total,payment_method,paid_amount,created_at FROM purchases ORDER BY created_at DESC");return rows.map((p:any)=>({id:p.id,invoice_no:p.invoice_no,supplier_id:p.supplier_id,total:Number(p.total),payment_method:p.payment_method,paid_amount:Number(p.paid_amount),purchase_date:p.created_at}));}}
 
