@@ -79,7 +79,7 @@ jobs:
         shell: pwsh
         run: |
           gh release view "$env:VERSION" --repo "${{ github.repository }}"
-          $releaseInstaller = gh release view "$env:VERSION" --repo "${{ github.repository }}" --json assets --jq ".assets[].name | select(endswith('.exe'))"
+          $releaseInstaller = gh release view "$env:VERSION" --repo "${{ github.repository }}" --json assets --jq '.assets[].name' | Select-String -Pattern '\\.exe$'
           if (-not $releaseInstaller) {
             throw "GitHub release $env:VERSION has no Windows installer asset."
           }
