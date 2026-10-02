@@ -91,7 +91,7 @@ export async function getProducts() {
 export async function updateProduct(id:string, product: Partial<Omit<Product,"id">>) { const body={...product,id}; try{return await apiRequest<{ok:boolean;id:string}>(`/products/${id}`,{method:"PUT",body:JSON.stringify({...body,categoryId:(product as any).categoryId||null,masterValues:(product as any).masterValues||{}})});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineProduct(body,"update");return {ok:true,id};} }
 export async function deleteProduct(id:string){ try{return await apiRequest<{ok:boolean;id:string;archived:boolean}>(`/products/${id}`,{method:"DELETE"});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineProduct({id},"delete");return {ok:true,id,archived:true};} }
 
-export async function createProduct(product: Omit<Product,"id">) {
+export async function createProduct(product: Omit<Product,"id">) { const localProduct={...product,id:crypto.randomUUID()};
   try{return await apiRequest<{id:string;variantId:string}>("/products", {
     method: "POST",
     body: JSON.stringify({
@@ -101,7 +101,7 @@ export async function createProduct(product: Omit<Product,"id">) {
       barcode: product.barcode || null, cost: product.cost,
       price: product.price, qty: product.qty, reorderLevel: product.reorderLevel, masterValues:(product as any).masterValues||{}
     })
-  });}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineProduct(product,"create");return {id:product.id,variantId:product.id};}}
+  });}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineProduct(localProduct,"create");return {id:localProduct.id,variantId:localProduct.id};}}
 
 export type ApiSaleItem = { variantId: string; qty: number; price: number };
 export function createSale(input: { invoiceNo: string; clientReference?: string; paymentMethod: "cash"|"card"|"bank"|"other"; discount: number; customerId?: string; received?: number; change?: number; items: ApiSaleItem[] }) {
