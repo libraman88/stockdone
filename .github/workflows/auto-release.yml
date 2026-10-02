@@ -64,6 +64,12 @@ jobs:
           $commit = git rev-parse HEAD
           "RELEASE_COMMIT=$commit" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      - name: Create release tag
+        shell: pwsh
+        run: |
+          git tag -a "$env:VERSION" "$env:RELEASE_COMMIT" -m "StockDone $env:VERSION"
+          git push origin "$env:VERSION"
+
       - name: Publish verified Windows installer
         run: npm run desktop:win:publish
         env:
