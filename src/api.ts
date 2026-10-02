@@ -1,5 +1,5 @@
 import { authStorage } from "./auth";
-import { queueOfflineProduct, queueOfflineMasterMutation, cacheOfflineMasterTypes, cacheOfflineMasterItems, getCachedMasterItems, queueOfflineStockTransfer, queueOfflineTransferReceive, getCachedStockTransfers } from "./offlineDb";
+import { queueOfflineProduct, queueOfflineMasterMutation, cacheOfflineMasterTypes, cacheOfflineMasterItems, getCachedMasterItems, queueOfflineStockTransfer, queueOfflineTransferReceive, getCachedStockTransfers, queueOfflineAdminMutation } from "./offlineDb";
 import type { Product } from "./types";
 
 const configuredApiUrl = String(import.meta.env.VITE_API_URL || "").trim().replace(/\/$/, "");
