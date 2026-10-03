@@ -80,20 +80,36 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $installer = Get-ChildItem -Path release -Filter "*Setup*.exe" -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          $installer = Get-ChildItem -Path release -Filter "*Setup*.exe" -File |
+            Where-Object { $_.Name -notlike "*.blockmap" } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
           if (-not $installer) {
             throw "Windows installer was not produced by the publish build."
           }
 
-          $assetNames = @(gh release view "$env:VERSION" --repo "$env:GITHUB_REPOSITORY" --json assets --template '{{range .assets}}{{println .name}}{{end}}')
-          $expectedAsset = "StockDone-Setup-$($env:VERSION_NUMBER).exe"
-          $published = $assetNames | Where-Object { $_ -eq $expectedAsset } | Select-Object -First 1
+          $expectedAsset = "StockDone-Setup-$(${env:VERSION_NUMBER).exe"
+          $uploaded = $false
+          for ($attempt = 1; $attempt -le 6; $attempt++) {
+            $assetNames = @(gh release view "$(${env:VERSION)" --repo "$(${env:GITHUB_REPOSITORY)" --json assets --template '{{range .assets}}{{println .name}}{{end}}')
+            $published = $assetNames | Where-Object { $_ -eq $expectedAsset } | Select-Object -First 1
+            if ($published) {
+              Write-Host "Installer already published: $expectedAsset"
+              $uploaded = $true
+              break
+            }
 
-          if (-not $published) {
-            Write-Host "Installer asset is not exposed by the release yet. Uploading it explicitly: $($installer.FullName)"
-            gh release upload "$env:VERSION" "$($installer.FullName)" --repo "$env:GITHUB_REPOSITORY" --clobber
+            Write-Host "Uploading installer attempt $attempt/6: $($installer.FullName)"
+            gh release upload "$(${env:VERSION)" "$($installer.FullName)" --repo "$(${env:GITHUB_REPOSITORY)" --clobber
+            Start-Sleep -Seconds 5
           }
 
+          if (-not $uploaded) {
+            $assetNames = @(gh release view "$(${env:VERSION)" --repo "$(${env:GITHUB_REPOSITORY)" --json assets --template '{{range .assets}}{{println .name}}{{end}}')
+            if ($assetNames -notcontains $expectedAsset) {
+              throw "Failed to publish Windows installer asset $expectedAsset."
+            }
+          }
       - name: Verify GitHub release and installer
         shell: pwsh
         env:
