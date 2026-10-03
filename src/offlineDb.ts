@@ -235,6 +235,29 @@ export async function queueOfflineInventoryAdjustment(input:{id:string;variantId
   }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
 }
 
+export async function queueOfflineCustomer(input:{id:string;name:string;phone?:string;address?:string}) {
+  if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
+  const session=authStorage.getSession(); if(!session?.businessId||!session?.branchId)throw new Error("Offline customer requires branch context.");
+  const now=new Date().toISOString(); await offlineDb.exec("BEGIN");
+  try{
+    await offlineDb.exec("CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,address TEXT,balance REAL NOT NULL DEFAULT 0,updated_at TEXT NOT NULL)");
+    await offlineDb.exec("INSERT INTO customers(id,name,phone,address,balance,updated_at) VALUES(?,?,?,?,0,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,phone=excluded.phone,address=excluded.address,updated_at=excluded.updated_at",[input.id,input.name,input.phone??null,input.address??null,now]);
+    await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"customer",input.id,"create",JSON.stringify({...input,businessId:session.businessId,branchId:session.branchId}),now,"pending"]);
+    await offlineDb.exec("COMMIT");
+  }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
+}
+export async function queueOfflineSupplier(input:{id:string;name:string;phone?:string;address?:string}) {
+  if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
+  const session=authStorage.getSession(); if(!session?.businessId||!session?.branchId)throw new Error("Offline supplier requires branch context.");
+  const now=new Date().toISOString(); await offlineDb.exec("BEGIN");
+  try{
+    await offlineDb.exec("CREATE TABLE IF NOT EXISTS suppliers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,address TEXT,balance REAL NOT NULL DEFAULT 0)");
+    await offlineDb.exec("INSERT INTO suppliers(id,name,phone,address,balance) VALUES(?,?,?,?,0) ON CONFLICT(id) DO UPDATE SET name=excluded.name,phone=excluded.phone,address=excluded.address",[input.id,input.name,input.phone??null,input.address??null]);
+    await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"supplier",input.id,"create",JSON.stringify({...input,businessId:session.businessId,branchId:session.branchId}),now,"pending"]);
+    await offlineDb.exec("COMMIT");
+  }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
+}
+
 export async function queueOfflineCustomerPayment(payment:{id:string;customerId:string;amount:number;note?:string}) {
   if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
   const session=authStorage.getSession(); if(!session?.businessId||!session?.branchId)throw new Error("Offline payment cannot be queued without branch context.");
@@ -277,6 +300,39 @@ export async function syncPendingInventoryAdjustments(){
     await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
   }catch(e){
     const message=e instanceof Error?e.message:"Inventory adjustment sync failed",status=e instanceof ApiError?e.status:0;
+    const permanent=status>=400&&status<500&&status!==401&&status!==408&&status!==429;
+    await offlineDb.exec("UPDATE sync_queue SET status=?,attempts=attempts+1,last_error=? WHERE id=?",[permanent?"failed":"pending",message,row.id]);failed++;
+  }
+  return{synced,failed};
+}
+
+export async function syncPendingCustomers(){
+  if(!isOnline()||!(await offlineDb.available()))return{synced:0,failed:0};
+  const rows=await offlineDb.query<{id:string;payload:string}>("SELECT id,payload FROM sync_queue WHERE entity='customer' AND operation='create' AND status='pending' ORDER BY created_at");
+  let synced=0,failed=0;
+  for(const row of rows)try{
+    const p=JSON.parse(row.payload),s=authStorage.getSession();
+    if(!s?.businessId||!s?.branchId||p.businessId!==s.businessId||p.branchId!==s.branchId)continue;
+    await apiRequest("/customers",{method:"POST",body:JSON.stringify({name:p.name,phone:p.phone||undefined,address:p.address||undefined})});
+    await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
+  }catch(e){
+    const message=e instanceof Error?e.message:"Customer sync failed",status=e instanceof ApiError?e.status:0;
+    const permanent=status>=400&&status<500&&status!==401&&status!==408&&status!==429;
+    await offlineDb.exec("UPDATE sync_queue SET status=?,attempts=attempts+1,last_error=? WHERE id=?",[permanent?"failed":"pending",message,row.id]);failed++;
+  }
+  return{synced,failed};
+}
+export async function syncPendingSuppliers(){
+  if(!isOnline()||!(await offlineDb.available()))return{synced:0,failed:0};
+  const rows=await offlineDb.query<{id:string;payload:string}>("SELECT id,payload FROM sync_queue WHERE entity='supplier' AND operation='create' AND status='pending' ORDER BY created_at");
+  let synced=0,failed=0;
+  for(const row of rows)try{
+    const p=JSON.parse(row.payload),s=authStorage.getSession();
+    if(!s?.businessId||!s?.branchId||p.businessId!==s.businessId||p.branchId!==s.branchId)continue;
+    await apiRequest("/suppliers",{method:"POST",body:JSON.stringify({name:p.name,phone:p.phone||undefined,address:p.address||undefined})});
+    await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
+  }catch(e){
+    const message=e instanceof Error?e.message:"Supplier sync failed",status=e instanceof ApiError?e.status:0;
     const permanent=status>=400&&status<500&&status!==401&&status!==408&&status!==429;
     await offlineDb.exec("UPDATE sync_queue SET status=?,attempts=attempts+1,last_error=? WHERE id=?",[permanent?"failed":"pending",message,row.id]);failed++;
   }
@@ -368,7 +424,7 @@ export async function syncPendingProduction(){
 export async function syncPendingBranches(){if(!isOnline()||!(await offlineDb.available()))return{synced:0,failed:0};const rows=await offlineDb.query<any>("SELECT id,entity_id,payload FROM sync_queue WHERE entity='branch' AND status='pending' ORDER BY created_at");let synced=0,failed=0;for(const row of rows)try{const p=JSON.parse(row.payload),s=authStorage.getSession();if(!s?.businessId||p.businessId!==s.businessId)continue;await apiRequest("/branches",{method:"POST",body:JSON.stringify({id:p.id,name:p.name,code:p.code})});await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=(SELECT id FROM sync_queue WHERE entity='branch' AND entity_id=? AND status='pending' ORDER BY created_at LIMIT 1)",[new Date().toISOString(),row.entity_id]);synced++;}catch(e){const msg=e instanceof Error?e.message:"Branch sync failed",status=e instanceof ApiError?e.status:0;const permanent=status>=400&&status<500&&status!==401&&status!==408&&status!==429;await offlineDb.exec("UPDATE sync_queue SET status=?,attempts=attempts+1,last_error=? WHERE entity='branch' AND entity_id=? AND status='pending'",[permanent?"failed":"pending",msg,row.entity_id]);failed++;}return{synced,failed};}
 
 export async function syncAllOfflinePending(){
-  const syncers=[syncPendingProductsAndMasters,syncPendingAdminMutations,syncPendingBranches,syncPendingInventoryAdjustments,syncPendingProduction,syncPendingPurchases,syncPendingSupplierPayments,syncPendingSales,syncPendingCustomerPayments,syncPendingReturns,syncPendingExchanges,syncPendingStockTransfers];
+  const syncers=[syncPendingProductsAndMasters,syncPendingAdminMutations,syncPendingBranches,syncPendingInventoryAdjustments,syncPendingProduction,syncPendingCustomers,syncPendingSuppliers,syncPendingPurchases,syncPendingSupplierPayments,syncPendingSales,syncPendingCustomerPayments,syncPendingReturns,syncPendingExchanges,syncPendingStockTransfers];
   let synced=0,failed=0;
   for(const sync of syncers){const r=await sync();synced+=r.synced;failed+=r.failed;}
   return{synced,failed};
