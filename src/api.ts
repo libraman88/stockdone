@@ -1,5 +1,5 @@
 import { authStorage } from "./auth";
-import { queueOfflineProduct, queueOfflineMasterMutation, cacheOfflineMasterTypes, cacheOfflineMasterItems, getCachedMasterItems, queueOfflineStockTransfer, queueOfflineTransferReceive, getCachedStockTransfers, queueOfflineAdminMutation, queueOfflineRawMaterial, queueOfflineFabricLot, queueOfflineCmtJob, queueOfflineCmtJobUpdate, queueOfflineFinishedStock } from "./offlineDb";
+import { queueOfflineProduct, queueOfflineMasterMutation, cacheOfflineMasterTypes, cacheOfflineMasterItems, getCachedMasterItems, queueOfflineStockTransfer, queueOfflineTransferReceive, queueOfflineBranch, getCachedStockTransfers, queueOfflineAdminMutation, queueOfflineRawMaterial, queueOfflineFabricLot, queueOfflineCmtJob, queueOfflineCmtJobUpdate, queueOfflineFinishedStock } from "./offlineDb";
 import type { Product } from "./types";
 
 const configuredApiUrl = String(import.meta.env.VITE_API_URL || "").trim().replace(/\/$/, "");
@@ -309,7 +309,7 @@ export async function createStockTransfer(input:{toBranchId:string;items:{varian
 
 export type Branch={id:string;name:string;code:string};
 export async function getBranches(){try{const b=await apiRequest<Branch[]>("/branches");if(electronOffline())for(const x of b)await offlineExec("INSERT INTO branches(id,name,code) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,code=excluded.code",[x.id,x.name,x.code]);return b;}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;return offlineQuery<Branch>("SELECT id,name,code FROM branches ORDER BY name");}}
-export async function createBranch(input:{name:string;code:string}){try{return await apiRequest<Branch>("/branches",{method:"POST",body:JSON.stringify(input)});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const b={id:crypto.randomUUID(),name:input.name,code:input.code};const rows:Branch[]=JSON.parse(localStorage.getItem("stockdone.branches")||"[]");localStorage.setItem("stockdone.branches",JSON.stringify([...rows,b]));return b;}}
+export async function createBranch(input:{name:string;code:string}){try{return await apiRequest<Branch>("/branches",{method:"POST",body:JSON.stringify(input)});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const id=crypto.randomUUID();const b={id,name:input.name,code:input.code};await queueOfflineBranch(b);return b;}}
 export async function receiveStockTransfer(id:string){try{return await apiRequest<{id:string;status:string}>(`/inventory/transfers/${id}/receive`,{method:"POST"});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineTransferReceive(id);return {id,status:"received"};}}
 
 export async function getStockTransfers(){try{return await apiRequest<any[]>("/inventory/transfers");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;return getCachedStockTransfers();}}
