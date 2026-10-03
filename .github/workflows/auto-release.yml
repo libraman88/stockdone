@@ -70,10 +70,8 @@ jobs:
           git tag -a "$env:VERSION" "$env:RELEASE_COMMIT" -m "StockDone $env:VERSION"
           git push origin "$env:VERSION"
 
-      - name: Publish verified Windows installer
-        run: npm run desktop:win:publish
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build verified Windows installer for release
+        run: npm run desktop:win
 
       - name: Ensure Windows installer asset is published
         shell: pwsh
@@ -88,10 +86,10 @@ jobs:
             throw "Windows installer was not produced by the publish build."
           }
 
-          $expectedAsset = "StockDone-Setup-$(${env:VERSION_NUMBER).exe"
+          $expectedAsset = "StockDone-Setup-$env:VERSION_NUMBER.exe"
           $uploaded = $false
           for ($attempt = 1; $attempt -le 6; $attempt++) {
-            $assetNames = @(gh release view "$(${env:VERSION)" --repo "$(${env:GITHUB_REPOSITORY)" --json assets --template '{{range .assets}}{{println .name}}{{end}}')
+            $assetNames = @(gh release view "$env:VERSION" --repo "$env:GITHUB_REPOSITORY" --json assets --template '{{range .assets}}{{println .name}}{{end}}')
             $published = $assetNames | Where-Object { $_ -eq $expectedAsset } | Select-Object -First 1
             if ($published) {
               Write-Host "Installer already published: $expectedAsset"
@@ -100,7 +98,7 @@ jobs:
             }
 
             Write-Host "Uploading installer attempt $attempt/6: $($installer.FullName)"
-            gh release upload "$(${env:VERSION)" "$($installer.FullName)" --repo "$(${env:GITHUB_REPOSITORY)" --clobber
+            gh release upload "$env:VERSION" "$($installer.FullName)" --repo "$env:GITHUB_REPOSITORY" --clobber
             Start-Sleep -Seconds 5
           }
 
