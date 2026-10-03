@@ -202,6 +202,39 @@ export async function cacheOfflineCustomer(customer:{id:string;name:string;phone
   await offlineDb.exec("CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,balance REAL NOT NULL DEFAULT 0,updated_at TEXT NOT NULL)");
   await offlineDb.exec("INSERT INTO customers(id,name,phone,balance,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,phone=excluded.phone,balance=excluded.balance,updated_at=excluded.updated_at",[customer.id,customer.name,customer.phone??null,customer.balance??0,new Date().toISOString()]);
 }
+export async function queueOfflineSupplierPayment(payment:{id:string;supplierId:string;amount:number;note?:string}) {
+  if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
+  const s=authStorage.getSession(); if(!s?.businessId||!s?.branchId)throw new Error("Offline supplier payment cannot be queued without branch context.");
+  if(payment.amount<=0)throw new Error("Payment amount must be positive.");
+  const now=new Date().toISOString(); await offlineDb.exec("BEGIN");
+  try{
+    const rows=await offlineDb.query<{balance:number}>("SELECT balance FROM suppliers WHERE id=?",[payment.supplierId]);
+    if(!rows[0])throw new Error("Supplier is not available offline.");
+    if(payment.amount>Number(rows[0].balance))throw new Error("Payment exceeds supplier balance.");
+    await offlineDb.exec("UPDATE suppliers SET balance=balance-? WHERE id=?",[payment.amount,payment.supplierId]);
+    await offlineDb.exec("INSERT INTO supplier_transactions(id,supplier_id,type,amount,reference_id,note,created_at) VALUES(?,?,?,?,?,?,?)",[payment.id,payment.supplierId,"payment",payment.amount,payment.id,payment.note||"Offline supplier payment",now]);
+    await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"supplier_payment",payment.id,"create",JSON.stringify({...payment,businessId:s.businessId,branchId:s.branchId}),now,"pending"]);
+    await offlineDb.exec("COMMIT");
+  }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
+}
+
+export async function queueOfflineInventoryAdjustment(input:{id:string;variantId:string;quantityDelta:number;reason:string;note?:string}) {
+  if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
+  const s=authStorage.getSession(); if(!s?.businessId||!s?.branchId)throw new Error("Offline inventory adjustment requires branch context.");
+  if(!Number.isInteger(input.quantityDelta)||input.quantityDelta===0)throw new Error("Inventory adjustment must be a non-zero integer.");
+  const now=new Date().toISOString(); await offlineDb.exec("BEGIN");
+  try{
+    const rows=await offlineDb.query<{qty:number}>("SELECT qty FROM products WHERE id=? AND COALESCE(active,1)=1",[input.variantId]);
+    if(!rows[0])throw new Error("Product is not available offline.");
+    const next=Number(rows[0].qty)+input.quantityDelta;
+    if(next<0)throw new Error("Inventory cannot become negative.");
+    await offlineDb.exec("UPDATE products SET qty=?,updated_at=? WHERE id=?",[next,now,input.variantId]);
+    await offlineDb.exec("INSERT INTO stock_movements(id,product_id,type,quantity,reason,reference_id,created_at) VALUES(?,?,?,?,?,?,?)",[input.id,input.variantId,"adjustment",input.quantityDelta,input.reason,input.id,now]);
+    await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"inventory_adjustment",input.id,"create",JSON.stringify({...input,businessId:s.businessId,branchId:s.branchId}),now,"pending"]);
+    await offlineDb.exec("COMMIT");
+  }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
+}
+
 export async function queueOfflineCustomerPayment(payment:{id:string;customerId:string;amount:number;note?:string}) {
   if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
   const session=authStorage.getSession(); if(!session?.businessId||!session?.branchId)throw new Error("Offline payment cannot be queued without branch context.");
@@ -216,6 +249,40 @@ export async function queueOfflineCustomerPayment(payment:{id:string;customerId:
     await offlineDb.exec("COMMIT");
   } catch(e){await offlineDb.exec("ROLLBACK");throw e;}
 }
+export async function syncPendingSupplierPayments(){
+  if(!isOnline()||!(await offlineDb.available()))return{synced:0,failed:0};
+  const rows=await offlineDb.query<{id:string;payload:string}>("SELECT id,payload FROM sync_queue WHERE entity='supplier_payment' AND operation='create' AND status='pending' ORDER BY created_at");
+  let synced=0,failed=0;
+  for(const row of rows)try{
+    const p=JSON.parse(row.payload),s=authStorage.getSession();
+    if(!s?.businessId||!s?.branchId||p.businessId!==s.businessId||p.branchId!==s.branchId)continue;
+    await apiRequest(`/suppliers/${p.supplierId}/payment`,{method:"POST",body:JSON.stringify({amount:p.amount,note:p.note||"Offline supplier payment"})});
+    await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
+  }catch(e){
+    const message=e instanceof Error?e.message:"Supplier payment sync failed",status=e instanceof ApiError?e.status:0;
+    const permanent=status>=400&&status<500&&status!==401&&status!==408&&status!==429;
+    await offlineDb.exec("UPDATE sync_queue SET status=?,attempts=attempts+1,last_error=? WHERE id=?",[permanent?"failed":"pending",message,row.id]);failed++;
+  }
+  return{synced,failed};
+}
+
+export async function syncPendingInventoryAdjustments(){
+  if(!isOnline()||!(await offlineDb.available()))return{synced:0,failed:0};
+  const rows=await offlineDb.query<{id:string;payload:string}>("SELECT id,payload FROM sync_queue WHERE entity='inventory_adjustment' AND operation='create' AND status='pending' ORDER BY created_at");
+  let synced=0,failed=0;
+  for(const row of rows)try{
+    const p=JSON.parse(row.payload),s=authStorage.getSession();
+    if(!s?.businessId||!s?.branchId||p.businessId!==s.businessId||p.branchId!==s.branchId)continue;
+    await apiRequest("/inventory/adjustments",{method:"POST",body:JSON.stringify({variantId:p.variantId,quantityDelta:p.quantityDelta,reason:p.reason,note:p.note,clientReference:p.id})});
+    await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
+  }catch(e){
+    const message=e instanceof Error?e.message:"Inventory adjustment sync failed",status=e instanceof ApiError?e.status:0;
+    const permanent=status>=400&&status<500&&status!==401&&status!==408&&status!==429;
+    await offlineDb.exec("UPDATE sync_queue SET status=?,attempts=attempts+1,last_error=? WHERE id=?",[permanent?"failed":"pending",message,row.id]);failed++;
+  }
+  return{synced,failed};
+}
+
 export async function syncPendingCustomerPayments() {
   if(!isOnline()||!(await offlineDb.available()))return{synced:0,failed:0};
   const rows=await offlineDb.query<{id:string;payload:string}>("SELECT id,payload FROM sync_queue WHERE entity='customer_payment' AND operation='create' AND status='pending' ORDER BY created_at");
@@ -301,7 +368,7 @@ export async function syncPendingProduction(){
 export async function syncPendingBranches(){if(!isOnline()||!(await offlineDb.available()))return{synced:0,failed:0};const rows=await offlineDb.query<any>("SELECT id,entity_id,payload FROM sync_queue WHERE entity='branch' AND status='pending' ORDER BY created_at");let synced=0,failed=0;for(const row of rows)try{const p=JSON.parse(row.payload),s=authStorage.getSession();if(!s?.businessId||p.businessId!==s.businessId)continue;await apiRequest("/branches",{method:"POST",body:JSON.stringify({id:p.id,name:p.name,code:p.code})});await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=(SELECT id FROM sync_queue WHERE entity='branch' AND entity_id=? AND status='pending' ORDER BY created_at LIMIT 1)",[new Date().toISOString(),row.entity_id]);synced++;}catch(e){const msg=e instanceof Error?e.message:"Branch sync failed",status=e instanceof ApiError?e.status:0;const permanent=status>=400&&status<500&&status!==401&&status!==408&&status!==429;await offlineDb.exec("UPDATE sync_queue SET status=?,attempts=attempts+1,last_error=? WHERE entity='branch' AND entity_id=? AND status='pending'",[permanent?"failed":"pending",msg,row.entity_id]);failed++;}return{synced,failed};}
 
 export async function syncAllOfflinePending(){
-  const syncers=[syncPendingProductsAndMasters,syncPendingAdminMutations,syncPendingBranches,syncPendingProduction,syncPendingPurchases,syncPendingSales,syncPendingCustomerPayments,syncPendingReturns,syncPendingExchanges,syncPendingStockTransfers];
+  const syncers=[syncPendingProductsAndMasters,syncPendingAdminMutations,syncPendingBranches,syncPendingInventoryAdjustments,syncPendingProduction,syncPendingPurchases,syncPendingSupplierPayments,syncPendingSales,syncPendingCustomerPayments,syncPendingReturns,syncPendingExchanges,syncPendingStockTransfers];
   let synced=0,failed=0;
   for(const sync of syncers){const r=await sync();synced+=r.synced;failed+=r.failed;}
   return{synced,failed};
