@@ -1,5 +1,5 @@
 import { authStorage } from "./auth";
-import { queueOfflineProduct, queueOfflineMasterMutation, cacheOfflineMasterTypes, cacheOfflineMasterItems, getCachedMasterItems, queueOfflineStockTransfer, queueOfflineTransferReceive, queueOfflineBranch, getCachedStockTransfers, queueOfflineAdminMutation, queueOfflineRawMaterial, queueOfflineFabricLot, queueOfflineCmtJob, queueOfflineCmtJobUpdate, queueOfflineFinishedStock } from "./offlineDb";
+import { queueOfflineProduct, queueOfflineMasterMutation, cacheOfflineMasterTypes, cacheOfflineMasterItems, getCachedMasterItems, queueOfflineStockTransfer, queueOfflineTransferReceive, queueOfflineBranch, getCachedStockTransfers, queueOfflineAdminMutation, queueOfflineRawMaterial, queueOfflineFabricLot, queueOfflineCmtJob, queueOfflineCmtJobUpdate, queueOfflineFinishedStock, queueOfflineSale, queueOfflinePurchase, queueOfflineCustomerPayment, queueOfflineReturn, queueOfflineExchange } from "./offlineDb";
 import type { Product } from "./types";
 
 const configuredApiUrl = String(import.meta.env.VITE_API_URL || "").trim().replace(/\/$/, "");
@@ -104,21 +104,73 @@ export async function createProduct(product: Omit<Product,"id">) { const localPr
   });}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineProduct(localProduct,"create");return {id:localProduct.id,variantId:localProduct.id};}}
 
 export type ApiSaleItem = { variantId: string; qty: number; price: number };
-export function createSale(input: { invoiceNo: string; clientReference?: string; paymentMethod: "cash"|"card"|"bank"|"other"; discount: number; customerId?: string; received?: number; change?: number; items: ApiSaleItem[] }) {
-  return apiRequest<{id:string;invoiceNo:string;total:number}>("/sales", { method: "POST", body: JSON.stringify(input) });
+export async function createSale(input: { invoiceNo: string; clientReference?: string; paymentMethod: "cash"|"card"|"bank"|"other"; discount: number; customerId?: string; received?: number; change?: number; items: ApiSaleItem[] }) {
+  try {
+    return await apiRequest<{id:string;invoiceNo:string;total:number}>("/sales", { method: "POST", body: JSON.stringify(input) });
+  } catch (error) {
+    if (!electronOffline() || !isNetworkFailure(error)) throw error;
+    const id = input.clientReference || crypto.randomUUID();
+    const placeholders = input.items.map(()=>"?").join(",");
+    const products = await offlineQuery<any>("SELECT id,cost FROM products WHERE id IN (" + placeholders + ")", input.items.map(i=>i.variantId));
+    const byId = new Map(products.map((p:any)=>[p.id,p]));
+    const items = input.items.map((item)=>({id:crypto.randomUUID(),productId:item.variantId,qty:item.qty,price:item.price,unitCost:Number(byId.get(item.variantId)?.cost||0)}));
+    const total = Math.max(0,input.items.reduce((sum,item)=>sum + Number(item.price)*Number(item.qty),0) - Number(input.discount||0));
+    await queueOfflineSale({id,invoiceNo:input.invoiceNo,total,paymentMethod:input.paymentMethod,discount:Number(input.discount||0),customerId:input.customerId||null,received:input.received,change:input.change,items});
+    return {id,invoiceNo:input.invoiceNo,total};
+  }
 }
 
-export function createPurchase(input: { invoiceNo: string; supplierId?: string; paymentMethod?: "cash"|"card"|"bank"|"credit"; paidAmount?: number; items: { variantId: string; quantity: number; cost: number }[] }) {
-  return apiRequest<{id:string;invoiceNo:string;total:number}>("/purchases", { method: "POST", body: JSON.stringify(input) });
+export async function createPurchase(input: { invoiceNo: string; supplierId?: string; paymentMethod?: "cash"|"card"|"bank"|"credit"; paidAmount?: number; items: { variantId: string; quantity: number; cost: number }[] }) {
+  try {
+    return await apiRequest<{id:string;invoiceNo:string;total:number}>("/purchases", { method: "POST", body: JSON.stringify(input) });
+  } catch (error) {
+    if (!electronOffline() || !isNetworkFailure(error)) throw error;
+    const id = crypto.randomUUID();
+    if (!input.supplierId) throw new Error("Offline purchase requires a supplier.");
+    const items = input.items.map((item)=>({id:crypto.randomUUID(),productId:item.variantId,qty:item.quantity,price:item.cost,unitCost:item.cost}));
+    const total = items.reduce((sum,item)=>sum + Number(item.price)*Number(item.qty),0);
+    await queueOfflinePurchase({id,invoiceNo:input.invoiceNo,total,paymentMethod:input.paymentMethod||"cash",paidAmount:Number(input.paidAmount||0),supplierId:input.supplierId,items});
+    return {id,invoiceNo:input.invoiceNo,total};
+  }
 }
 
 export type ApiCustomer = { id:string; name:string; phone?:string|null; address?:string|null; balance:number };
 export async function getCustomers(){try{return await apiRequest<ApiCustomer[]>("/customers");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await offlineExec("CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,address TEXT,balance REAL NOT NULL DEFAULT 0,updated_at TEXT NOT NULL)");return offlineQuery<ApiCustomer>("SELECT id,name,phone,address,balance FROM customers ORDER BY name");}}
 export function createCustomer(input:{name:string;phone?:string;address?:string}){return apiRequest<ApiCustomer>("/customers",{method:"POST",body:JSON.stringify(input)});}
-export function recordCustomerPayment(id:string,amount:number,note?:string){return apiRequest<{customerId:string;balance:number}>(`/customers/${id}/payment`,{method:"POST",body:JSON.stringify({amount,note})});}
+export async function recordCustomerPayment(id:string,amount:number,note?:string){
+  try {
+    return await apiRequest<{customerId:string;balance:number}>(`/customers/${id}/payment`,{method:"POST",body:JSON.stringify({amount,note})});
+  } catch (error) {
+    if (!electronOffline() || !isNetworkFailure(error)) throw error;
+    const paymentId=crypto.randomUUID();
+    await queueOfflineCustomerPayment({id:paymentId,customerId:id,amount,note});
+    const rows=await offlineQuery<{balance:number}>("SELECT balance FROM customers WHERE id=?",[id]);
+    return {customerId:id,balance:Number(rows[0]?.balance||0)};
+  }
+}
 
 export type ApiReturnItem={variantId:string;quantity:number;unitPrice:number};
-export function createReturn(input:{saleId:string;type:"return"|"exchange";refundAmount:number;refundMethod?:"cash"|"card"|"bank"|"other";items:ApiReturnItem[];exchangeItems?:ApiReturnItem[]}){return apiRequest<{id:string;type:string;refundAmount:number;priceDifference:number}>("/returns",{method:"POST",body:JSON.stringify(input)});}
+export async function createReturn(input:{saleId:string;type:"return"|"exchange";refundAmount:number;refundMethod?:"cash"|"card"|"bank"|"other";items:ApiReturnItem[];exchangeItems?:ApiReturnItem[]}){
+  try {
+    return await apiRequest<{id:string;type:string;refundAmount:number;priceDifference:number}>("/returns",{method:"POST",body:JSON.stringify(input)});
+  } catch (error) {
+    if (!electronOffline() || !isNetworkFailure(error)) throw error;
+    const id=crypto.randomUUID();
+    const allItems=[...input.items,...(input.exchangeItems||[])];
+    const placeholders=allItems.map(()=>"?").join(",");
+    const products=await offlineQuery<any>("SELECT id,cost FROM products WHERE id IN (" + placeholders + ")",allItems.map(i=>i.variantId));
+    const costs=new Map(products.map((p:any)=>[p.id,Number(p.cost||0)]));
+    if(input.type==="return"){
+      await queueOfflineReturn({id,saleId:input.saleId,items:input.items.map(i=>({id:crypto.randomUUID(),productId:i.variantId,qty:i.quantity,refund:i.unitPrice*i.quantity,unitCost:costs.get(i.variantId)||0})),refund:Number(input.refundAmount||0)});
+      return {id,type:"return",refundAmount:Number(input.refundAmount||0),priceDifference:0};
+    }
+    const returned=input.items.map(i=>({id:crypto.randomUUID(),productId:i.variantId,qty:i.quantity}));
+    const replacement=(input.exchangeItems||[]).map(i=>({id:crypto.randomUUID(),productId:i.variantId,qty:i.quantity,price:i.unitPrice,unitCost:costs.get(i.variantId)||0}));
+    const priceDifference=Math.max(0,replacement.reduce((s,i)=>s+i.price*i.qty,0)-input.items.reduce((s,i)=>s+i.unitPrice*i.quantity,0));
+    await queueOfflineExchange({id,saleId:input.saleId,returned,replacement,difference:priceDifference});
+    return {id,type:"exchange",refundAmount:Number(input.refundAmount||0),priceDifference};
+  }
+}
 export async function getSales(){try{return await apiRequest<any[]>("/sales");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const rows=await offlineQuery<any>("SELECT id,invoice_no,client_reference,total,payment_method,discount,customer_id,status,created_at FROM sales ORDER BY created_at DESC");const items=await offlineQuery<any>("SELECT si.sale_id,si.product_id,si.qty,si.price,p.name,p.sku,p.size,p.color FROM sale_items si LEFT JOIN products p ON p.id=si.product_id ORDER BY si.id");return rows.map((s:any)=>({id:s.id,invoiceNo:s.invoice_no,total:Number(s.total),paymentMethod:s.payment_method,discount:Number(s.discount),customerId:s.customer_id,createdAt:s.created_at,status:s.status,items:items.filter((i:any)=>i.sale_id===s.id).map((i:any)=>({id:i.product_id,productId:i.product_id,variantId:i.product_id,qty:Number(i.qty),price:Number(i.price),name:i.name,sku:i.sku,size:i.size,color:i.color}))}));}}
 
 export type ReportSummary={sales:{invoices:number;sales_total:number;discounts:number};profit:{gross_profit:number};inventory:{variants:number;units:number;cost_value:number;retail_value:number};lowStock:Array<{name:string;sku:string;size:string|null;color:string|null;quantity:number;reorder_level:number}>};
