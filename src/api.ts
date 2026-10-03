@@ -83,8 +83,8 @@ export async function getProducts() {
     return rows.map((p: any) => ({...p, variantId: p.variantId || p.variant_id, masterValues:p.masterValues||p.master_values||{}, reorderLevel: Number(p.reorderLevel ?? p.reorder_level ?? 5), qty: Number(p.qty ?? 0), cost: Number(p.cost ?? 0), price: Number(p.price ?? 0)}));
   } catch (error) {
     if (!electronOffline() || !isNetworkFailure(error)) throw error;
-    const rows = await offlineQuery<any>("SELECT id,name,sku,category,brand,sub_category AS subCategory,floor,warehouse,size,color,barcode,cost,price,qty,reorder_level AS reorderLevel FROM products WHERE COALESCE(active,1)=1 ORDER BY name");
-    return rows.map((p:any)=>({...p,variantId:p.id,reorderLevel:Number(p.reorderLevel ?? 5),qty:Number(p.qty ?? 0),cost:Number(p.cost ?? 0),price:Number(p.price ?? 0)})) as Product[];
+    const rows = await offlineQuery<any>("SELECT id,name,sku,category,brand,sub_category AS subCategory,floor,warehouse,size,color,barcode,cost,price,qty,master_values FROM products WHERE COALESCE(active,1)=1 ORDER BY name");
+    return rows.map((p:any)=>({...p,variantId:p.id,reorderLevel:Number(p.reorderLevel ?? 5),qty:Number(p.qty ?? 0),cost:Number(p.cost ?? 0),price:Number(p.price ?? 0),masterValues:(()=>{try{return p.master_values?JSON.parse(p.master_values):{}}catch{return {}}})()})) as Product[];
   }
 }
 
