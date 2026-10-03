@@ -103,7 +103,7 @@ jobs:
           }
 
           if (-not $uploaded) {
-            $assetNames = @(gh release view "$(${env:VERSION)" --repo "$(${env:GITHUB_REPOSITORY)" --json assets --template '{{range .assets}}{{println .name}}{{end}}')
+            $assetNames = @(gh release view "$env:VERSION" --repo "$env:GITHUB_REPOSITORY" --json assets --template '{{range .assets}}{{println .name}}{{end}}')
             if ($assetNames -notcontains $expectedAsset) {
               throw "Failed to publish Windows installer asset $expectedAsset."
             }
