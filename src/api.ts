@@ -1,5 +1,5 @@
 import { authStorage } from "./auth";
-import { queueOfflineProduct, queueOfflineMasterMutation, cacheOfflineMasterTypes, cacheOfflineMasterItems, getCachedMasterItems, queueOfflineStockTransfer, queueOfflineTransferReceive, queueOfflineBranch, getCachedStockTransfers, queueOfflineAdminMutation, queueOfflineRawMaterial, queueOfflineFabricLot, queueOfflineCmtJob, queueOfflineCmtJobUpdate, queueOfflineFinishedStock, queueOfflineSale, queueOfflinePurchase, queueOfflineCustomerPayment, queueOfflineReturn, queueOfflineExchange } from "./offlineDb";
+import { queueOfflineProduct, queueOfflineMasterMutation, cacheOfflineMasterTypes, cacheOfflineMasterItems, getCachedMasterItems, queueOfflineStockTransfer, queueOfflineTransferReceive, queueOfflineBranch, getCachedStockTransfers, queueOfflineAdminMutation, queueOfflineRawMaterial, queueOfflineFabricLot, queueOfflineCmtJob, queueOfflineCmtJobUpdate, queueOfflineFinishedStock, queueOfflineSale, queueOfflinePurchase, queueOfflineCustomerPayment, queueOfflineSupplierPayment, queueOfflineInventoryAdjustment, queueOfflineReturn, queueOfflineExchange } from "./offlineDb";
 import type { Product } from "./types";
 
 const configuredApiUrl = String(import.meta.env.VITE_API_URL || "").trim().replace(/\/$/, "");
@@ -355,7 +355,16 @@ export function updateVariant(productId:string, variantId:string, input: {size?:
 
 export function createVariant(productId:string,input:{size?:string;color?:string;barcode?:string;cost:number;price:number;qty:number;reorderLevel:number}){return apiRequest<{variantId:string}>(`/products/${productId}/variants`,{method:"POST",body:JSON.stringify(input)});}
 
-export function adjustInventory(input:{variantId:string;quantityDelta:number;reason:"Damaged"|"Missing"|"Physical Count"|"Correction"|"Other";note?:string}){return apiRequest<{id:string;quantity:number}>("/inventory/adjustments",{method:"POST",body:JSON.stringify(input)});}
+export async function adjustInventory(input:{variantId:string;quantityDelta:number;reason:"Damaged"|"Missing"|"Physical Count"|"Correction"|"Other";note?:string}){
+  try{return await apiRequest<{id:string;quantity:number}>("/inventory/adjustments",{method:"POST",body:JSON.stringify(input)});}
+  catch(error){
+    if(!electronOffline()||!isNetworkFailure(error))throw error;
+    const id=crypto.randomUUID();
+    await queueOfflineInventoryAdjustment({id,...input});
+    const rows=await offlineQuery<{qty:number}>("SELECT qty FROM products WHERE id=?",[input.variantId]);
+    return {id,quantity:Number(rows[0]?.qty||0)};
+  }
+}
 
 export async function createStockTransfer(input:{toBranchId:string;items:{variantId:string;quantity:number}[]}){const id=crypto.randomUUID();try{return await apiRequest<{id:string;status:string}>("/inventory/transfers",{method:"POST",body:JSON.stringify({...input,id})});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineStockTransfer({id,...input});return {id,status:"sent"};}}
 
@@ -370,7 +379,16 @@ export async function getPurchases(){try{return await apiRequest<any[]>("/purcha
 
 export type Supplier={id:string;name:string;phone?:string|null;address?:string|null;balance?:number};
 export async function getSuppliers(){try{const suppliers=await apiRequest<Supplier[]>("/suppliers");if(electronOffline()){await offlineExec("CREATE TABLE IF NOT EXISTS suppliers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,address TEXT,balance REAL NOT NULL DEFAULT 0)");for(const s of suppliers)await offlineExec("INSERT INTO suppliers(id,name,phone,address,balance) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,phone=excluded.phone,address=excluded.address,balance=excluded.balance",[s.id,s.name,s.phone??null,s.address??null,Number(s.balance??0)]);}return suppliers;}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await offlineExec("CREATE TABLE IF NOT EXISTS suppliers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,address TEXT,balance REAL NOT NULL DEFAULT 0)");return offlineQuery<Supplier>("SELECT id,name,phone,address,balance FROM suppliers ORDER BY name");}}
-export function recordSupplierPayment(id:string,amount:number,note?:string){return apiRequest<{supplierId:string;balance:number}>(`/suppliers/${id}/payment`,{method:"POST",body:JSON.stringify({amount,note})});}
+export async function recordSupplierPayment(id:string,amount:number,note?:string){
+  try{return await apiRequest<{supplierId:string;balance:number}>(`/suppliers/${id}/payment`,{method:"POST",body:JSON.stringify({amount,note})});}
+  catch(error){
+    if(!electronOffline()||!isNetworkFailure(error))throw error;
+    const paymentId=crypto.randomUUID();
+    await queueOfflineSupplierPayment({id:paymentId,supplierId:id,amount,note});
+    const rows=await offlineQuery<{balance:number}>("SELECT balance FROM suppliers WHERE id=?",[id]);
+    return {supplierId:id,balance:Number(rows[0]?.balance||0)};
+  }
+}
 export type SupplierTransaction={id:string;type:"purchase"|"payment";amount:number;reference_id?:string|null;note?:string|null;created_at:string};
 export async function getSupplierTransactions(id:string){try{return await apiRequest<SupplierTransaction[]>(`/suppliers/${id}/transactions`);}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;return offlineQuery<SupplierTransaction>("SELECT id,type,amount,reference_id,note,created_at FROM supplier_transactions WHERE supplier_id=? ORDER BY created_at DESC",[id]);}}
 export function createSupplier(input:{name:string;phone?:string;address?:string}){return apiRequest<Supplier>("/suppliers",{method:"POST",body:JSON.stringify(input)});}
