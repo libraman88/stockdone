@@ -73,7 +73,19 @@ jobs:
       - name: Build verified Windows installer for release
         run: npm run desktop:win
 
-      - name: Ensure Windows installer asset is published
+      - name: Create GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$env:VERSION" --repo "$env:GITHUB_REPOSITORY" *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create "$env:VERSION" --repo "$env:GITHUB_REPOSITORY" --verify-tag --title "StockDone $env:VERSION" --generate-notes
+          } else {
+            Write-Host "Release already exists: $env:VERSION"
+          }
+
+      - name: Publish Windows installer asset
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -83,31 +95,24 @@ jobs:
             Sort-Object LastWriteTime -Descending |
             Select-Object -First 1
           if (-not $installer) {
-            throw "Windows installer was not produced by the publish build."
+            throw "Windows installer was not produced by the release build."
           }
 
           $expectedAsset = "StockDone-Setup-$env:VERSION_NUMBER.exe"
-          $uploaded = $false
-          for ($attempt = 1; $attempt -le 6; $attempt++) {
-            $assetNames = @(gh release view "$env:VERSION" --repo "$env:GITHUB_REPOSITORY" --json assets --template '{{range .assets}}{{println .name}}{{end}}')
-            $published = $assetNames | Where-Object { $_ -eq $expectedAsset } | Select-Object -First 1
-            if ($published) {
-              Write-Host "Installer already published: $expectedAsset"
-              $uploaded = $true
-              break
-            }
+          $uploadPath = Join-Path $installer.DirectoryName $expectedAsset
+          Copy-Item -LiteralPath $installer.FullName -Destination $uploadPath -Force
 
-            Write-Host "Uploading installer attempt $attempt/6: $($installer.FullName)"
-            gh release upload "$env:VERSION" "$($installer.FullName)" --repo "$env:GITHUB_REPOSITORY" --clobber
-            Start-Sleep -Seconds 5
+          Write-Host "Uploading installer as: $expectedAsset"
+          gh release upload "$env:VERSION" "$uploadPath" --repo "$env:GITHUB_REPOSITORY" --clobber
+          if ($LASTEXITCODE -ne 0) {
+            throw "GitHub rejected the Windows installer upload."
           }
 
-          if (-not $uploaded) {
-            $assetNames = @(gh release view "$env:VERSION" --repo "$env:GITHUB_REPOSITORY" --json assets --template '{{range .assets}}{{println .name}}{{end}}')
-            if ($assetNames -notcontains $expectedAsset) {
-              throw "Failed to publish Windows installer asset $expectedAsset."
-            }
+          $assetNames = @(gh release view "$env:VERSION" --repo "$env:GITHUB_REPOSITORY" --json assets --template '{{range .assets}}{{println .name}}{{end}}')
+          if ($assetNames -notcontains $expectedAsset) {
+            throw "Windows installer asset was not visible after upload: $expectedAsset"
           }
+
       - name: Verify GitHub release and installer
         shell: pwsh
         env:
