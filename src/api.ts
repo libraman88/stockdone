@@ -1,5 +1,5 @@
 import { authStorage } from "./auth";
-import { queueOfflineProduct, queueOfflineMasterMutation, cacheOfflineMasterTypes, cacheOfflineMasterItems, getCachedMasterItems, queueOfflineStockTransfer, queueOfflineTransferReceive, queueOfflineBranch, getCachedStockTransfers, queueOfflineAdminMutation, queueOfflineRawMaterial, queueOfflineFabricLot, queueOfflineCmtJob, queueOfflineCmtJobUpdate, queueOfflineFinishedStock, queueOfflineSale, queueOfflinePurchase, queueOfflineCustomerPayment, queueOfflineSupplierPayment, queueOfflineInventoryAdjustment, queueOfflineReturn, queueOfflineExchange } from "./offlineDb";
+import { queueOfflineProduct, queueOfflineMasterMutation, cacheOfflineMasterTypes, cacheOfflineMasterItems, getCachedMasterItems, queueOfflineStockTransfer, queueOfflineTransferReceive, queueOfflineBranch, getCachedStockTransfers, queueOfflineAdminMutation, queueOfflineRawMaterial, queueOfflineFabricLot, queueOfflineCmtJob, queueOfflineCmtJobUpdate, queueOfflineFinishedStock, queueOfflineSale, queueOfflinePurchase, queueOfflineCustomer, queueOfflineSupplier, queueOfflineCustomerPayment, queueOfflineSupplierPayment, queueOfflineInventoryAdjustment, queueOfflineReturn, queueOfflineExchange } from "./offlineDb";
 import type { Product } from "./types";
 
 const configuredApiUrl = String(import.meta.env.VITE_API_URL || "").trim().replace(/\/$/, "");
@@ -136,7 +136,7 @@ export async function createPurchase(input: { invoiceNo: string; supplierId?: st
 
 export type ApiCustomer = { id:string; name:string; phone?:string|null; address?:string|null; balance:number };
 export async function getCustomers(){try{return await apiRequest<ApiCustomer[]>("/customers");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await offlineExec("CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,address TEXT,balance REAL NOT NULL DEFAULT 0,updated_at TEXT NOT NULL)");return offlineQuery<ApiCustomer>("SELECT id,name,phone,address,balance FROM customers ORDER BY name");}}
-export function createCustomer(input:{name:string;phone?:string;address?:string}){return apiRequest<ApiCustomer>("/customers",{method:"POST",body:JSON.stringify(input)});}
+export async function createCustomer(input:{name:string;phone?:string;address?:string}){try{return await apiRequest<ApiCustomer>("/customers",{method:"POST",body:JSON.stringify(input)});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const id=crypto.randomUUID();await queueOfflineCustomer({id,...input});return {id,name:input.name,phone:input.phone||null,address:input.address||null,balance:0};}}
 export async function recordCustomerPayment(id:string,amount:number,note?:string){
   try {
     return await apiRequest<{customerId:string;balance:number}>(`/customers/${id}/payment`,{method:"POST",body:JSON.stringify({amount,note})});
@@ -391,7 +391,7 @@ export async function recordSupplierPayment(id:string,amount:number,note?:string
 }
 export type SupplierTransaction={id:string;type:"purchase"|"payment";amount:number;reference_id?:string|null;note?:string|null;created_at:string};
 export async function getSupplierTransactions(id:string){try{return await apiRequest<SupplierTransaction[]>(`/suppliers/${id}/transactions`);}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;return offlineQuery<SupplierTransaction>("SELECT id,type,amount,reference_id,note,created_at FROM supplier_transactions WHERE supplier_id=? ORDER BY created_at DESC",[id]);}}
-export function createSupplier(input:{name:string;phone?:string;address?:string}){return apiRequest<Supplier>("/suppliers",{method:"POST",body:JSON.stringify(input)});}
+export async function createSupplier(input:{name:string;phone?:string;address?:string}){try{return await apiRequest<Supplier>("/suppliers",{method:"POST",body:JSON.stringify(input)});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const id=crypto.randomUUID();await queueOfflineSupplier({id,...input});return {id,name:input.name,phone:input.phone||null,address:input.address||null,balance:0};}}
 
 export type InventorySummary={product_id:string;name:string;sku:string;variant_id:string;size:string|null;color:string|null;barcode:string|null;quantity:number;cost:number;price:number;reorder_level:number};
 export async function getInventorySummary(){try{return await apiRequest<InventorySummary[]>("/inventory/summary");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;return offlineQuery<InventorySummary>("SELECT id AS product_id,name,sku,id AS variant_id,size,color,barcode,qty AS quantity,cost,price,reorder_level FROM products ORDER BY name");}}
