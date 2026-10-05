@@ -28,7 +28,7 @@ header p{margin:4px 0 0;color:#66829a;font-size:12px}
 .card strong{display:block;color:#103b61;font-size:22px;margin-top:7px}
 .panel{grid-column:1/-1;margin-bottom:12px}
 .panel h2,.panel h3{margin:0 0 12px;color:#124b78;font-size:15px}
-.panel button{padding:9px 13px;margin:0 7px 7px 0;border:1px solid #b8d7ec;background:#fff;color:#24526f;border-radius:6px}
+.panel button{padding:9px 13px;margin:0 7px 7px 0;border:1px solid #b8d7ec;background:#eef7ff;color:#14557f;border-radius:6px}
 .panel button:hover{border-color:#1688ed;color:#0874d8}
 .panel button.primary,.primary{background:#0879e8!important;border-color:#0879e8!important;color:#fff!important}
 .formgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px;margin-bottom:14px}
@@ -74,7 +74,7 @@ button.secondary,.master-type-tabs button,.master-stats button{background:#eef7f
 button.secondary:hover,.master-type-tabs button:hover{background:#dff0ff;border-color:#8fc5eb;color:#0b5f99}
 button.danger{background:#d64545;border-color:#d64545;color:#fff}
 button.danger:hover{background:#b93636;border-color:#b93636}
-button.ghost{background:#fff;border-color:#bcd9ed;color:#14557f}
+button.ghost{background:#eef7ff;border-color:#bcd9ed;color:#14557f}
 button.ghost:hover{background:#eef7ff;border-color:#8fc5eb}
 .master-type-tabs button.active{background:#0879e8;border-color:#0879e8;color:#fff}
 .master-type-tabs button.active:hover{background:#0668c9;border-color:#0668c9}
