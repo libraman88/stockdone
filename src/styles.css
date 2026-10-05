@@ -63,3 +63,18 @@ tr:hover td{background:#f8fcff}
 .master-actions{display:flex;gap:8px;align-items:center}.master-actions>input{width:170px;padding:9px 10px;border:1px solid #bcd9ed;border-radius:5px;outline:none}.master-add{display:flex;gap:6px}.master-add input{width:205px;padding:9px 10px;border:1px solid #bcd9ed;border-radius:5px;outline:none}.master-add button{margin:0;white-space:nowrap}
 .master-table-wrap{overflow:auto}.master-table-wrap table{margin:0}.master-action-col{width:210px;text-align:right}.master-table-wrap td:last-child{text-align:right}.master-table-wrap .mini{padding:6px 9px;margin:0 0 0 5px;font-size:11px}.master-status{display:inline-block;padding:4px 8px;border-radius:12px;background:#e8f7f0;color:#15734e;font-size:10px;font-weight:700}.master-status.inactive{background:#f2f3f5;color:#687887}.master-edit-input{width:100%;max-width:320px;padding:7px 9px;border:1px solid #1688ed;border-radius:5px;outline:none}.master-empty{padding:42px 20px;text-align:center;color:#7890a2}.master-empty strong{display:block;color:#315b76;margin-bottom:5px}.master-empty span{font-size:11px}
 @media(max-width:900px){.master-toolbar,.master-list-head{align-items:stretch;flex-direction:column}.master-custom,.master-actions{width:100%;flex-wrap:wrap}.master-custom input,.master-actions>input,.master-add,.master-add input{flex:1;width:auto}.master-hero{align-items:flex-start;flex-direction:column}}
+
+/* StockDone unified professional blue action buttons */
+button{background:#0879e8;color:#fff;border:1px solid #0879e8;border-radius:6px;font-weight:700;box-shadow:0 1px 2px rgba(16,59,97,.08);transition:background .15s,transform .15s,border-color .15s}
+button:hover{background:#0668c9;border-color:#0668c9}
+button:active{transform:translateY(1px)}
+button:disabled{background:#b8c9d8;border-color:#b8c9d8;color:#fff;cursor:not-allowed}
+button.primary{background:#0879e8;border-color:#0879e8;color:#fff}
+button.secondary,.master-type-tabs button,.master-stats button{background:#eef7ff;border-color:#bcd9ed;color:#14557f}
+button.secondary:hover,.master-type-tabs button:hover{background:#dff0ff;border-color:#8fc5eb;color:#0b5f99}
+button.danger{background:#d64545;border-color:#d64545;color:#fff}
+button.danger:hover{background:#b93636;border-color:#b93636}
+button.ghost{background:#fff;border-color:#bcd9ed;color:#14557f}
+button.ghost:hover{background:#eef7ff;border-color:#8fc5eb}
+.master-type-tabs button.active{background:#0879e8;border-color:#0879e8;color:#fff}
+.master-type-tabs button.active:hover{background:#0668c9;border-color:#0668c9}
