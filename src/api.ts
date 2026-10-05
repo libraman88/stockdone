@@ -355,7 +355,7 @@ export function updateVariant(productId:string, variantId:string, input: {size?:
 
 export function createVariant(productId:string,input:{size?:string;color?:string;barcode?:string;cost:number;price:number;qty:number;reorderLevel:number}){return apiRequest<{variantId:string}>(`/products/${productId}/variants`,{method:"POST",body:JSON.stringify(input)});}
 
-export async function adjustInventory(input:{variantId:string;quantityDelta:number;reason:"Damaged"|"Missing"|"Physical Count"|"Correction"|"Other";note?:string}){
+export async function adjustInventory(input:{variantId:string;quantityDelta:number;reason:"Damaged"|"Missing"|"Physical Count"|"Correction"|"Other";note?:string;date?:string}){
   try{return await apiRequest<{id:string;quantity:number}>("/inventory/adjustments",{method:"POST",body:JSON.stringify(input)});}
   catch(error){
     if(!electronOffline()||!isNetworkFailure(error))throw error;
@@ -366,6 +366,8 @@ export async function adjustInventory(input:{variantId:string;quantityDelta:numb
   }
 }
 
+export async function getInventoryAdjustments(variantId:string){return apiRequest<any[]>(`/inventory/adjustments?variantId=${encodeURIComponent(variantId)}`)}
+export async function updateInventoryAdjustment(id:string,input:{quantityDelta:number;reason:string;note?:string;date?:string}){return apiRequest<{ok:boolean;quantity:number}>(`/inventory/adjustments/${id}`,{method:"PUT",body:JSON.stringify(input)})}
 export async function createStockTransfer(input:{toBranchId:string;items:{variantId:string;quantity:number}[]}){const id=crypto.randomUUID();try{return await apiRequest<{id:string;status:string}>("/inventory/transfers",{method:"POST",body:JSON.stringify({...input,id})});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineStockTransfer({id,...input});return {id,status:"sent"};}}
 
 export type Branch={id:string;name:string;code:string};
