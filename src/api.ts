@@ -77,9 +77,9 @@ async function offlineExec(sql:string, params:unknown[]=[]):Promise<void> {
   await bridge.exec(sql, params);
 }
 
-export async function getProducts() {
+export async function getProducts(includeArchived=false) {
   try {
-    const rows = await apiRequest<Product[]>("/products");
+    const rows = await apiRequest<Product[]>(includeArchived?"/products?includeArchived=true":"/products");
     return rows.map((p: any) => ({...p, variantId: p.variantId || p.variant_id, masterValues:p.masterValues||p.master_values||{}, reorderLevel: Number(p.reorderLevel ?? p.reorder_level ?? 5), qty: Number(p.qty ?? 0), cost: Number(p.cost ?? 0), price: Number(p.price ?? 0)}));
   } catch (error) {
     if (!electronOffline() || !isNetworkFailure(error)) throw error;
@@ -88,7 +88,7 @@ export async function getProducts() {
   }
 }
 
-export async function updateProduct(id:string, product: Partial<Omit<Product,"id">>) { const body={...product,id}; try{return await apiRequest<{ok:boolean;id:string}>(`/products/${id}`,{method:"PUT",body:JSON.stringify({...body,categoryId:(product as any).categoryId||null,masterValues:(product as any).masterValues||{}})});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineProduct(body,"update");return {ok:true,id};} }
+export async function updateProduct(id:string, product: Partial<Omit<Product,"id">>, options?:{reactivate?:boolean}) { const body={...product,id,...(options?.reactivate?{reactivate:true}:{})}; try{return await apiRequest<{ok:boolean;id:string}>(`/products/${id}`,{method:"PUT",body:JSON.stringify({...body,categoryId:(product as any).categoryId||null,masterValues:(product as any).masterValues||{}})});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineProduct(body,"update");return {ok:true,id};} }
 export async function deleteProduct(id:string){ try{return await apiRequest<{ok:boolean;id:string;archived:boolean}>(`/products/${id}`,{method:"DELETE"});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineProduct({id},"delete");return {ok:true,id,archived:true};} }
 
 export async function createProduct(product: Omit<Product,"id">) { const localProduct={...product,id:crypto.randomUUID()};
