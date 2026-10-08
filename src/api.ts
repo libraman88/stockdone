@@ -22,7 +22,7 @@ export function setApiToken(value: string | null) {
 export class ApiError extends Error { constructor(message: string, public readonly status: number) { super(message); this.name = "ApiError"; } }
 
 
-function isNetworkFailure(error: unknown) {
+export function isNetworkFailure(error: unknown) {
   return error instanceof TypeError || (error instanceof Error && /fetch|network|failed to fetch|load failed|connection/i.test(error.message));
 }
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
