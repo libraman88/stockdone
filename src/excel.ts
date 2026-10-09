@@ -31,7 +31,34 @@ export function parseProductsExcel(file: File): Promise<Record<string, unknown>[
     const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     if (!sheet) return [];
-    return XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+    const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", blankrows: false });
+    const normalize = (value: unknown) => String(value ?? "").replace(/^\\uFEFF/, "").trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\\s+/g, " ");
+    const aliases: Record<string,string> = {
+      "name":"Name","product":"Name","product name":"Name","item":"Name","item name":"Name","description":"Name",
+      "sku":"SKU","code":"SKU","item code":"SKU","product code":"SKU","stock keeping unit":"SKU",
+      "barcode":"Barcode","bar code":"Barcode","ean":"Barcode","category":"Category","brand":"Brand",
+      "sub category":"Sub-category","subcategory":"Sub-category","floor":"Floor","warehouse":"Warehouse",
+      "size":"Size","color":"Color","colour":"Color","cost":"Cost","purchase cost":"Cost","unit cost":"Cost",
+      "price":"Price","sale price":"Price","selling price":"Price","retail price":"Price",
+      "qty":"Qty","quantity":"Qty","stock":"Qty","opening stock":"Qty","reorder level":"Reorder Level","reorder point":"Reorder Level"
+    };
+    let headerIndex = -1;
+    let headers: string[] = [];
+    for (let i=0; i<Math.min(matrix.length,30); i++) {
+      const candidate = (matrix[i] || []).map(v => aliases[normalize(v)] || String(v ?? "").trim());
+      if (candidate.includes("Name") && candidate.some(v => ["Price","SKU","Barcode","Qty","Category"].includes(v))) {
+        headerIndex = i; headers = candidate; break;
+      }
+    }
+    if (headerIndex < 0) throw new Error("Excel header row not found. Required columns: Name and at least one of Price, SKU, Barcode, Qty, or Category.");
+    const rows: Record<string,unknown>[] = [];
+    for (const cells of matrix.slice(headerIndex+1)) {
+      if (!(cells || []).some(v => String(v ?? "").trim() !== "")) continue;
+      const row: Record<string,unknown> = {};
+      headers.forEach((key,index) => { if (key) row[key] = cells?.[index] ?? ""; });
+      rows.push(row);
+    }
+    return rows;
   });
 }
 
