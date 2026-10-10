@@ -89,3 +89,14 @@ button.ghost:hover{background:#eef7ff;border-color:#8fc5eb}
 .dashboard-card:hover,.dashboard-alert:hover{outline:2px solid var(--primary,#2563eb);}
 .dashboard-card small{font-size:12px;opacity:.72;}
 .dashboard-alert{width:100%;text-align:left;cursor:pointer;color:inherit;font:inherit;}
+
+
+/* Search/filter action buttons follow the same StockDone blue theme. */
+.inventory-filters>.filter-clear{background:#0879e8!important;border-color:#0879e8!important;color:#fff!important}
+.inventory-filters>.filter-clear:hover{background:#0668c9!important;border-color:#0668c9!important}
+.master-actions .master-add>button{background:#0879e8!important;border-color:#0879e8!important;color:#fff!important}
+.master-actions .master-add>button:hover{background:#0668c9!important;border-color:#0668c9!important}
+.product-picks>button{background:#0879e8!important;border-color:#0879e8!important;color:#fff!important;text-align:left}
+.product-picks>button:hover{background:#0668c9!important;border-color:#0668c9!important}
+.product-picks>button small{color:#e6f3ff!important}
+.inventory-filters>input:focus,.inventory-filters>select:focus,.master-actions>input:focus,.master-add>input:focus{border-color:#1688ed;box-shadow:0 0 0 2px rgba(22,136,237,.14);outline:none}
