@@ -80,11 +80,11 @@ async function offlineExec(sql:string, params:unknown[]=[]):Promise<void> {
 export async function getProducts(includeArchived=false) {
   try {
     const rows = await apiRequest<Product[]>(includeArchived?"/products?includeArchived=true":"/products");
-    return rows.map((p: any) => ({...p, variantId: p.variantId || p.variant_id, masterValues:p.masterValues||p.master_values||{}, reorderLevel: Number(p.reorderLevel ?? p.reorder_level ?? 5), qty: Number(p.qty ?? 0), cost: Number(p.cost ?? 0), price: Number(p.price ?? 0)}));
+    return rows.map((p: any) => ({...p, variantId: p.variantId || p.variant_id, masterValues:p.masterValues||p.master_values||{}, reorderLevel: Number(p.reorderLevel ?? p.reorder_level ?? 5), qty: Number(p.qty ?? p.quantity ?? p.stock_quantity ?? p.stockQuantity ?? p.opening_stock ?? 0), cost: Number(p.cost ?? 0), price: Number(p.price ?? 0)}));
   } catch (error) {
     if (!electronOffline() || !isNetworkFailure(error)) throw error;
     const rows = await offlineQuery<any>(`SELECT id,name,sku,category,brand,sub_category AS subCategory,floor,warehouse,size,color,barcode,cost,price,qty,master_values,active FROM products ${includeArchived ? "" : "WHERE COALESCE(active,1)=1"} ORDER BY name`);
-    return rows.map((p:any)=>({...p,variantId:p.id,reorderLevel:Number(p.reorderLevel ?? 5),qty:Number(p.qty ?? 0),cost:Number(p.cost ?? 0),price:Number(p.price ?? 0),masterValues:(()=>{try{return p.master_values?JSON.parse(p.master_values):{}}catch{return {}}})()})) as Product[];
+    return rows.map((p:any)=>({...p,variantId:p.id,reorderLevel:Number(p.reorderLevel ?? 5),qty:Number(p.qty ?? p.quantity ?? p.stock_quantity ?? p.stockQuantity ?? p.opening_stock ?? 0),cost:Number(p.cost ?? 0),price:Number(p.price ?? 0),masterValues:(()=>{try{return p.master_values?JSON.parse(p.master_values):{}}catch{return {}}})()})) as Product[];
   }
 }
 
