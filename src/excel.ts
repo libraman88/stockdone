@@ -32,7 +32,7 @@ export function parseProductsExcel(file: File): Promise<Record<string, unknown>[
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     if (!sheet) return [];
     const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", blankrows: false });
-    const normalize = (value: unknown) => String(value ?? "").replace(/^\\uFEFF/, "").trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\\s+/g, " ");
+    const normalize = (value: unknown) => String(value ?? "").replace(/^\uFEFF/, "").trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
     const aliases: Record<string,string> = {
       "name":"Name","product":"Name","product name":"Name","item":"Name","item name":"Name","description":"Name",
       "sku":"SKU","code":"SKU","item code":"SKU","product code":"SKU","stock keeping unit":"SKU",
@@ -45,9 +45,9 @@ export function parseProductsExcel(file: File): Promise<Record<string, unknown>[
     let headerIndex = -1;
     let headers: string[] = [];
     for (let i=0; i<Math.min(matrix.length,30); i++) {
-      const candidate = (matrix[i] || []).map(v => aliases[normalize(v)] || String(v ?? "").trim());
+      const candidate = (matrix[i] || []).map(v => aliases[normalize(v)] || normalize(v));
       if (candidate.includes("Name") && candidate.some(v => ["Price","SKU","Barcode","Qty","Category"].includes(v))) {
-        headerIndex = i; headers = candidate; break;
+        headerIndex = i; headers = candidate.map(v => ({name:"Name",sku:"SKU",category:"Category",size:"Size",color:"Color",colour:"Color",barcode:"Barcode",cost:"Cost",price:"Price",qty:"Qty",quantity:"Qty",brand:"Brand",floor:"Floor",warehouse:"Warehouse","sub category":"Sub-category","reorder level":"Reorder Level"} as Record<string,string>)[v] || v); break;
       }
     }
     if (headerIndex < 0) throw new Error("Excel header row not found. Required columns: Name and at least one of Price, SKU, Barcode, Qty, or Category.");
