@@ -46,11 +46,11 @@ export function parseProductsExcel(file: File): Promise<Record<string, unknown>[
     let headers: string[] = [];
     for (let i=0; i<Math.min(matrix.length,30); i++) {
       const candidate = (matrix[i] || []).map(v => aliases[normalize(v)] || normalize(v));
-      if (candidate.includes("Name") && candidate.some(v => ["Price","SKU","Barcode","Qty","Category"].includes(v))) {
+      if (candidate.includes("Name")) {
         headerIndex = i; headers = candidate.map(v => ({name:"Name",sku:"SKU",category:"Category",size:"Size",color:"Color",colour:"Color",barcode:"Barcode",cost:"Cost",price:"Price",qty:"Qty",quantity:"Qty",brand:"Brand",floor:"Floor",warehouse:"Warehouse","sub category":"Sub-category","reorder level":"Reorder Level"} as Record<string,string>)[v] || v); break;
       }
     }
-    if (headerIndex < 0) throw new Error("Excel header row not found. Required columns: Name and at least one of Price, SKU, Barcode, Qty, or Category.");
+    if (headerIndex < 0) throw new Error("Excel header row not found. Expected a Name, Product Name, Item Name, or Product column in the first worksheet.");
     const rows: Record<string,unknown>[] = [];
     for (const cells of matrix.slice(headerIndex+1)) {
       if (!(cells || []).some(v => String(v ?? "").trim() !== "")) continue;
