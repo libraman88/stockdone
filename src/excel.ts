@@ -30,15 +30,15 @@ export function parseProductsExcel(file: File): Promise<Record<string, unknown>[
   return file.arrayBuffer().then((buffer) => {
     const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
     const normalize = (value: unknown) => String(value ?? "")
-      .replace(/^\\uFEFF/, "")
-      .replace(/[\\r\\n\\t]+/g, " ")
-      .replace(/\\s+/g, " ")
+      .replace(/^\uFEFF/, "")
+      .replace(/[\r\n\t]+/g, " ")
+      .replace(/\s+/g, " ")
       .trim()
-      .replace(/\\*+$/, "")
+      .replace(/\*+$/, "")
       .trim()
       .toLowerCase()
       .replace(/[_-]+/g, " ")
-      .replace(/\\s+/g, " ");
+      .replace(/\s+/g, " ");
     const aliases: Record<string,string> = {
       "name":"Name","product":"Name","product name":"Name","item":"Name","item name":"Name",
       "name of product":"Name","product title":"Name","item description":"Name","description":"Name",
