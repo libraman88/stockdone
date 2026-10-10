@@ -51,9 +51,10 @@ export function parseProductsExcel(file: File): Promise<Record<string, unknown>[
       "opening stock":"Qty","reorder level":"Reorder Level","reorder point":"Reorder Level"
     };
     const canonical = (value: unknown) => aliases[normalize(value)] || "";
-    // Excel files from different suppliers often put the real data on a later worksheet
-    // or place a title/logo above the header. Search every worksheet and a generous
-    // number of leading rows instead of assuming the first sheet/first 30 rows.
+    // Combine product rows from every worksheet that has a recognizable header.
+    // Suppliers commonly split catalogs across tabs; returning the first matching tab
+    // silently discarded the remaining products.
+    const allRows: Record<string, unknown>[] = [];
     for (const sheetName of workbook.SheetNames) {
       const sheet = workbook.Sheets[sheetName];
       if (!sheet) continue;
@@ -92,8 +93,9 @@ export function parseProductsExcel(file: File): Promise<Record<string, unknown>[
         const barcode = String(row.Barcode ?? "").trim();
         if (name || sku || barcode) rows.push(row);
       }
-      if (rows.length) return rows;
+      if (rows.length) allRows.push(...rows);
     }
+    if (allRows.length) return allRows;
     throw new Error("Excel product columns not found. Check that a worksheet has a Name/Product Name/Item Name column, or SKU/Barcode with Price/Qty/Category. The importer checked all worksheets and the first 200 rows of each.");
   });
 }
