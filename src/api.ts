@@ -11,6 +11,9 @@ const browserApiUrl = typeof window !== "undefined" && window.location.hostname 
 // This prevents a hosted StockDone build from accidentally calling the user's PC.
 const BASE_URL = configuredApiUrl || (runningInElectron ? "http://localhost:4000/api" : browserApiUrl);
 
+// Desktop installs only have a remote server when the build explicitly configures one.
+export function hasConfiguredApiUrl() { return Boolean(configuredApiUrl); }
+
 let token = sessionStorage.getItem("stockdone.apiToken");
 
 export function setApiToken(value: string | null) {
