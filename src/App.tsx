@@ -111,7 +111,7 @@ function POS({customers,products,cart,setCart,setProducts,sales,setSales,movemen
  const add=(p:Product,requestedQty=1)=>{const available=Math.max(0,Number(p.qty||0));if(available<=0)return alert("This item is out of stock.");const f=cart.find(x=>x.product.id===p.id);const nextQty=Math.min((f?.qty||0)+Math.max(1,requestedQty),available);setCart(f?cart.map(x=>x.product.id===p.id?{...x,qty:nextQty}:x):[...cart,{product:p,qty:Math.min(Math.max(1,requestedQty),available)}]);setScan("");setProductSearch("")};
  const remove=(id:string)=>setCart(cart.filter(x=>x.product.id!==id));
  const setLineQty=(id:string,value:number)=>{const item=cart.find(x=>x.product.id===id);if(!item)return;const max=Math.max(0,Number(item.product.qty||0));if(value<=0)return remove(id);setCart(cart.map(x=>x.product.id===id?{...x,qty:Math.min(Math.floor(value),max)}:x))};
- const enter=(e:KeyboardEvent<HTMLInputElement>)=>{if(e.key==="Enter"){const code=scan.trim();const p=products.find(x=>x.barcode===code||x.sku===code);if(p)add(p)}};
+ const enter=(e:KeyboardEvent<HTMLInputElement>)=>{if(e.key==="Enter"){const code=scan.trim();const p=products.find(x=>x.barcode===code||x.sku===code||x.id===code);if(p)add(p)}};
  const total=cart.reduce((sum,x)=>sum+x.product.price*x.qty,0),netTotal=Math.max(0,total-discount),change=payment==="cash"?Math.max(0,received-netTotal):0;
  const complete=async()=>{if(!cart.length)return alert("Add at least one item to the bill.");if(discount<0||discount>total)return alert("Discount is invalid.");if(payment==="cash"&&received<netTotal)return alert("Cash received is less than total.");
   const sale:Sale={id:crypto.randomUUID(),invoiceNo:"INV-"+Date.now(),items:cart.map(x=>({productId:x.product.id,qty:x.qty,price:x.product.price})),total:netTotal,discount,customerId:customerId||undefined,paymentMethod:payment,createdAt:new Date().toISOString()};
@@ -274,7 +274,7 @@ function BarcodeTools({products}:{products:Product[]}){
   if(!product){setStatus("Pehle product select karein.");return}
   try{
    const QRCode=(await import("qrcode")).default;
-   const data=JSON.stringify({name:product.name,sku:product.sku||"",barcode:product.barcode||"",id:product.id});
+   const data=product.barcode||product.sku||product.id;
    const svg=await QRCode.toString(data,{type:"svg",width:180,margin:1});
    const esc=(s:string)=>s.replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]!));
    const labels=Array.from({length:Math.max(1,Math.min(500,Math.floor(Number(qty)||1)))},()=>'<div class="label"><h3>'+esc(product.name)+'</h3><p>SKU: '+esc(product.sku||"—")+'</p><div class="graphic">'+svg+'</div><p>Rs. '+Number(product.price||0).toFixed(2)+'</p></div>').join("");
