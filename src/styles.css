@@ -100,3 +100,50 @@ button.ghost:hover{background:#eef7ff;border-color:#8fc5eb}
 .product-picks>button:hover{background:#0668c9!important;border-color:#0668c9!important}
 .product-picks>button small{color:#e6f3ff!important}
 .inventory-filters>input:focus,.inventory-filters>select:focus,.master-actions>input:focus,.master-add>input:focus{border-color:#1688ed;box-shadow:0 0 0 2px rgba(22,136,237,.14);outline:none}
+
+
+/* Unified StockDone button system: consistent blue actions across every page. */
+main button:not(.dashboard-card):not(.dashboard-alert):not(.secondary):not(.ghost):not(.danger) {
+  background:#0879e8;
+  border:1px solid #0879e8;
+  color:#fff;
+  border-radius:6px;
+  font-weight:700;
+  box-shadow:0 1px 2px rgba(16,59,97,.08);
+  transition:background .15s,border-color .15s,box-shadow .15s,transform .15s;
+}
+main button:not(.dashboard-card):not(.dashboard-alert):not(.secondary):not(.ghost):not(.danger):hover {
+  background:#0668c9;
+  border-color:#0668c9;
+  box-shadow:0 2px 5px rgba(8,121,232,.18);
+}
+main button:not(.dashboard-card):not(.dashboard-alert):not(.secondary):not(.ghost):not(.danger):active {
+  transform:translateY(1px);
+}
+main button:not(.dashboard-card):not(.dashboard-alert):disabled {
+  background:#b8c9d8;
+  border-color:#b8c9d8;
+  color:#fff;
+  box-shadow:none;
+  cursor:not-allowed;
+}
+main button.secondary, main button.ghost {
+  background:#eef7ff;
+  border-color:#bcd9ed;
+  color:#14557f;
+  box-shadow:none;
+}
+main button.secondary:hover, main button.ghost:hover {
+  background:#dff0ff;
+  border-color:#8fc5eb;
+  color:#0b5f99;
+}
+main button.danger {
+  background:#d64545;
+  border-color:#d64545;
+  color:#fff;
+}
+main button.danger:hover {
+  background:#b93636;
+  border-color:#b93636;
+}
