@@ -280,7 +280,9 @@ function BarcodeTools({products}:{products:Product[]}){
    const labels=Array.from({length:Math.max(1,Math.min(500,Math.floor(Number(qty)||1)))},()=>'<div class="label"><h3>'+esc(product.name)+'</h3><p>SKU: '+esc(product.sku||"—")+'</p><div class="graphic">'+svg+'</div><p>Rs. '+Number(product.price||0).toFixed(2)+'</p></div>').join("");
    const html='<!doctype html><html><head><meta charset="utf-8"><title>StockDone QR Labels</title><style>body{font:14px Arial;text-align:center;padding:8px}.sheet{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.label{overflow-wrap:anywhere;border:1px dashed #999;padding:8px;break-inside:avoid}.label h3{font-size:14px;margin:4px 0}.label p{margin:4px 0}.graphic svg{max-width:100%;height:auto}@media print{body{padding:0}.label{break-inside:avoid}}</style></head><body><div class="sheet">'+labels+'</div><script>window.onload=()=>window.print()</script></body></html>';
    const printSettings=settingsStorage.get();
-   await printHtml(html,printSettings.paper,(printSettings as any).printerName||getSavedPrinterName());
+   const columns=printSettings.paper==="80mm"?1:2;
+   const layoutHtml=html.replace("grid-template-columns:repeat(2,minmax(0,1fr))","grid-template-columns:repeat("+columns+",minmax(0,1fr))");
+   await printHtml(layoutHtml,printSettings.paper,(printSettings as any).printerName||getSavedPrinterName());
    setStatus("QR labels sent to print ("+Math.max(1,Math.min(500,Math.floor(Number(qty)||1)))+" labels).");
   }catch(e){setStatus("QR generation failed: "+(e instanceof Error?e.message:String(e)))}
  };
