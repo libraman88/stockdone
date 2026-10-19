@@ -245,7 +245,7 @@ export async function getReturnProfitImpact(from:string,to:string){
       WHERE substr(r.created_at,1,10)>=? AND substr(r.created_at,1,10)<=?`,[from,to]);
     const x=rows[0]||{};
     const returnedSales=Number(x.returned_sales||0),returnedCost=Number(x.returned_cost||0),exchangeSales=Number(x.exchange_sales||0),exchangeCost=Number(x.exchange_cost||0);
-    return {returned_sales:returnedSales,returned_cost:returnedCost,exchange_sales:exchangeSales,exchange_cost:exchangeCost,transactions:Number(x.transactions||0),net_sales_impact:exchangeSales-returnedSales,gross_profit_impact:(returnedSales-returnedCost)-(exchangeSales-exchangeCost)};
+    return {returned_sales:returnedSales,returned_cost:returnedCost,exchange_sales:exchangeSales,exchange_cost:exchangeCost,transactions:Number(x.transactions||0),net_sales_impact:exchangeSales-returnedSales,gross_profit_impact:(exchangeSales-exchangeCost)-(returnedSales-returnedCost)};
   }
 }
 export type ProfitReport={summary:{invoices:number;gross_sales:number;discounts:number;net_sales:number;cogs:number;gross_profit:number;margin_percent:number};daily:Array<Record<string,unknown>>};
