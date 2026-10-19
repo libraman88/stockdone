@@ -16,8 +16,10 @@ export async function resetOfflineTransactionalData(){if(!(await offlineDb.avail
 export async function cacheProduct(product:{id:string;name:string;sku:string;category?:string|null;size?:string|null;color?:string|null;barcode?:string|null;cost:number;price:number;qty:number;reorderLevel:number;masterValues?:Record<string,string>}) {
   if(!(await offlineDb.available()))return;
   const now=new Date().toISOString();
-  await offlineDb.exec(`INSERT INTO products(id,name,sku,category,size,color,barcode,cost,price,qty,reorder_level,master_values,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,sku=excluded.sku,category=excluded.category,size=excluded.size,color=excluded.color,barcode=excluded.barcode,cost=excluded.cost,price=excluded.price,qty=excluded.qty,reorder_level=excluded.reorder_level,master_values=excluded.master_values,updated_at=excluded.updated_at`,[product.id,product.name,product.sku,product.category??null,product.size??null,product.color??null,product.barcode??null,product.cost,product.price,product.qty,product.reorderLevel,JSON.stringify(product.masterValues||{}),now]);
+  await offlineDb.exec(`INSERT INTO products(id,name,sku,category,size,color,barcode,cost,price,qty,reorder_level,master_values,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,sku=excluded.sku,category=excluded.category,size=excluded.size,color=excluded.color,barcode=excluded.barcode,cost=excluded.cost,price=excluded.price,qty=excluded.qty,reorder_level=excluded.reorder_level,active=1,master_values=excluded.master_values,updated_at=excluded.updated_at`,[product.id,product.name,product.sku,product.category??null,product.size??null,product.color??null,product.barcode??null,product.cost,product.price,product.qty,product.reorderLevel,JSON.stringify(product.masterValues||{}),now]);
 }
+export async function archiveCachedProducts(ids:string[]) { if(!(await offlineDb.available()))return; const now=new Date().toISOString(); for(const id of [...new Set(ids.filter(Boolean))]) await offlineDb.exec("UPDATE products SET active=0,updated_at=? WHERE id=?",[now,id]); }
+
 export async function cacheProducts(products:Parameters<typeof cacheProduct>[0][]) { for(const p of products)await cacheProduct(p); }
 
 export async function cacheOfflineMasterTypes(types:{id:string;name:string;label:string;active:boolean;builtin?:boolean}[]){
@@ -69,7 +71,7 @@ export async function getCachedProducts() {
   return offlineDb.query<{
     id:string;name:string;sku:string;category:string|null;size:string|null;color:string|null;
     barcode:string|null;cost:number;price:number;qty:number;reorder_level:number;master_values:string
-  }>("SELECT id,name,sku,category,size,color,barcode,cost,price,qty,reorder_level,master_values FROM products ORDER BY name");
+  }>("SELECT id,name,sku,category,size,color,barcode,cost,price,qty,reorder_level,master_values FROM products WHERE COALESCE(active,1)=1 ORDER BY name");
 }
 
 export async function queueOfflineSale(sale:{id:string;invoiceNo:string;total:number;paymentMethod:string;discount:number;customerId?:string|null;received?:number;change?:number;businessId?:string;branchId?:string;items:{id:string;productId:string;qty:number;price:number;unitCost:number}[]}) {
