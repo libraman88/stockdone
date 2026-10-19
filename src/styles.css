@@ -147,3 +147,42 @@ main button.danger:hover {
   background:#b93636;
   border-color:#b93636;
 }
+
+
+/* Unified blue-theme form controls for typing/search fields across all pages. */
+main input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+main select,
+main textarea {
+  color:#18324f;
+  background-color:#fff;
+  border:1px solid #bcd9ed;
+  border-radius:6px;
+  outline:none;
+  transition:border-color .15s,box-shadow .15s,background-color .15s;
+}
+main input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):focus,
+main select:focus,
+main textarea:focus {
+  border-color:#1688ed;
+  box-shadow:0 0 0 3px rgba(22,136,237,.15);
+}
+main input::placeholder,
+main textarea::placeholder {
+  color:#7893aa;
+  opacity:1;
+}
+main input:disabled,
+main select:disabled,
+main textarea:disabled {
+  background-color:#edf4fa;
+  border-color:#d2e0eb;
+  color:#7893aa;
+  cursor:not-allowed;
+}
+main input[type="checkbox"],
+main input[type="radio"] {
+  accent-color:#0879e8;
+}
+main input[type="range"] {
+  accent-color:#0879e8;
+}
