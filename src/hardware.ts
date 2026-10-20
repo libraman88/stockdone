@@ -7,7 +7,7 @@ export function printerSettings(paper:PrinterPaper){return {paper,thermal:paper=
 export async function getPrinters(){return window.stockDoneHardware?.printers() ?? []}
 export function getSavedPrinterName(){try{return localStorage.getItem("stockdone.printer.name")||""}catch{return ""}}
 export function savePrinterName(name:string){try{localStorage.setItem("stockdone.printer.name",name)}catch{}}
-export async function printHtml(html:string,paper:PrinterPaper="A4",deviceName=""){if(window.stockDoneHardware){const desktopHtml=html.replace(/<script>\s*window\.onload\s*=\s*\(\)\s*=>\s*window\.print\(\)\s*<\/script>/gi,"");return window.stockDoneHardware.print(desktopHtml,paper,deviceName);}const w=window.open("","_blank","width=500,height=700");if(!w)throw new Error("Popup blocked.");w.document.write(html);w.document.close();return {ok:true}}
+export async function printHtml(html:string,paper:PrinterPaper="A4",deviceName=""){if(window.stockDoneHardware){const desktopHtml=html.replace(/<script\b[^>]*>[\s\S]*?\bwindow\.print\s*\(\s*\)[\s\S]*?<\/script>/gi,"");return window.stockDoneHardware.print(desktopHtml,paper,deviceName);}const w=window.open("","_blank","width=500,height=700");if(!w)throw new Error("Popup blocked.");w.document.write(html);w.document.close();return {ok:true}}
 
 export type ScannerSettings={enabled:boolean,sound:boolean,autoFocus:boolean,delayMs:number};
 const SCANNER_KEY="stockdone.scanner.settings";
