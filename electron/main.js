@@ -77,14 +77,23 @@ app.whenReady().then(() => {
     const printWindow = new BrowserWindow({show:false, webPreferences:{contextIsolation:true,nodeIntegration:false}});
     try {
       await printWindow.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(String(html)));
-      await new Promise(resolve => setTimeout(resolve, 250));
+      await new Promise(resolve => setTimeout(resolve, 500));
       const pageSize = paper === "80mm" ? {width:80000,height:2000000} : "A4";
-      return await new Promise((resolve, reject) => {
-        printWindow.webContents.print({silent:Boolean(deviceName),deviceName:deviceName||undefined,pageSize,printBackground:true}, (success,failureReason) => {
-          printWindow.close();
-          if(success) resolve({ok:true}); else reject(new Error(failureReason || "Printer failed"));
+      const runPrint = (options) => new Promise((resolve, reject) => {
+        printWindow.webContents.print(options, (success, failureReason) => {
+          if (success) resolve({ok:true});
+          else reject(new Error(failureReason || "Windows did not accept the print job."));
         });
       });
+      try {
+        await runPrint({silent:Boolean(deviceName),deviceName:deviceName||undefined,pageSize,printBackground:true});
+      } catch (error) {
+        if (!deviceName) throw error;
+        // A saved printer can be renamed or unavailable; show Windows' print dialog instead of silently failing.
+        await runPrint({silent:false,pageSize,printBackground:true});
+      }
+      if (!printWindow.isDestroyed()) printWindow.close();
+      return {ok:true};
     } catch (error) {
       if (!printWindow.isDestroyed()) printWindow.close();
       throw error;
