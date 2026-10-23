@@ -98,7 +98,7 @@ app.whenReady().then(() => {
       } else {
         // A non-silent print dialog cannot be interacted with reliably from a hidden BrowserWindow.
         printWindow.show();
-        await runPrint({silent:false,pageSize,printBackground:true});
+        await runPrint({silent:false,...(pageSize?{pageSize}:{}),printBackground:true,margins:{marginType:"none"}});
       }
       if (!printWindow.isDestroyed()) printWindow.close();
       return {ok:true};
