@@ -85,11 +85,13 @@ app.whenReady().then(() => {
           else reject(new Error(failureReason || "Windows did not accept the print job."));
         });
       });
-      // Always open Windows' print dialog. A silent spool can report success even when
-      // the selected printer is wrong, paused, offline, or has no paper; let the user
-      // explicitly select/confirm the destination for both original and duplicate bills.
-      printWindow.show();
-      await runPrint({silent:false,pageSize,printBackground:true});
+      try {
+        await runPrint({silent:Boolean(deviceName),deviceName:deviceName||undefined,pageSize,printBackground:true});
+      } catch (error) {
+        if (!deviceName) throw error;
+        // A saved printer can be renamed or unavailable; show Windows' print dialog instead of silently failing.
+        await runPrint({silent:false,pageSize,printBackground:true});
+      }
       if (!printWindow.isDestroyed()) printWindow.close();
       return {ok:true};
     } catch (error) {
