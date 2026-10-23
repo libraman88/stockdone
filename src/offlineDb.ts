@@ -199,10 +199,11 @@ export async function syncPendingReturns() {
   }
   return{synced,failed};
 }
-export async function cacheOfflineCustomer(customer:{id:string;name:string;phone?:string|null;balance?:number}) {
+export async function cacheOfflineCustomer(customer:{id:string;name:string;phone?:string|null;address?:string|null;shopName?:string|null;city?:string|null;previousBalance?:number;balance?:number}) {
   if(!(await offlineDb.available()))return;
-  await offlineDb.exec("CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,balance REAL NOT NULL DEFAULT 0,updated_at TEXT NOT NULL)");
-  await offlineDb.exec("INSERT INTO customers(id,name,phone,balance,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,phone=excluded.phone,balance=excluded.balance,updated_at=excluded.updated_at",[customer.id,customer.name,customer.phone??null,customer.balance??0,new Date().toISOString()]);
+  await offlineDb.exec("CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,address TEXT,shop_name TEXT,city TEXT,previous_balance REAL NOT NULL DEFAULT 0,balance REAL NOT NULL DEFAULT 0,updated_at TEXT NOT NULL)");
+  for(const migration of ["ALTER TABLE customers ADD COLUMN address TEXT","ALTER TABLE customers ADD COLUMN shop_name TEXT","ALTER TABLE customers ADD COLUMN city TEXT","ALTER TABLE customers ADD COLUMN previous_balance REAL NOT NULL DEFAULT 0"])try{await offlineDb.exec(migration)}catch{}
+  await offlineDb.exec("INSERT INTO customers(id,name,phone,address,shop_name,city,previous_balance,balance,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,phone=excluded.phone,address=excluded.address,shop_name=excluded.shop_name,city=excluded.city,previous_balance=excluded.previous_balance,balance=excluded.balance,updated_at=excluded.updated_at",[customer.id,customer.name,customer.phone??null,customer.address??null,customer.shopName??null,customer.city??null,customer.previousBalance??0,customer.balance??0,new Date().toISOString()]);
 }
 export async function queueOfflineSupplierPayment(payment:{id:string;supplierId:string;amount:number;note?:string}) {
   if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
