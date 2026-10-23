@@ -102,19 +102,9 @@ app.whenReady().then(() => {
         });
       });
 
-      if (isLabel && deviceName) {
-        // Submit to the exact saved Windows printer without opening a second printer-selection
-        // dialog. This avoids the native dialog overriding the custom 2 x 1 inch media size.
-        // If Windows rejects the direct job (for example, a stale printer name), fall back
-        // to the interactive dialog so the user can still choose the printer manually.
-        try {
-          await runPrint({ ...options, silent: true, deviceName });
-        } catch (directError) {
-          console.warn("Direct label print failed; opening printer dialog:", directError.message);
-          printWindow.show();
-          await runPrint({ ...options, silent: false });
-        }
-      } else if (isLabel) {
+      if (isLabel) {
+        // Keep the label preview/details window visible and always open the native
+        // Windows printer dialog so the user can verify/select the Zebra printer.
         printWindow.show();
         await runPrint({ ...options, silent: false });
       } else if (deviceName) {
