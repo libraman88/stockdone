@@ -137,14 +137,15 @@ export async function createPurchase(input: { invoiceNo: string; supplierId?: st
   }
 }
 
-export type ApiCustomer = { id:string; name:string; phone?:string|null; address?:string|null; balance:number };
-export async function getCustomers(){try{return await apiRequest<ApiCustomer[]>("/customers");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await offlineExec("CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,address TEXT,balance REAL NOT NULL DEFAULT 0,updated_at TEXT NOT NULL)");return offlineQuery<ApiCustomer>("SELECT id,name,phone,address,balance FROM customers ORDER BY name");}}
-export async function createCustomer(input:{name:string;phone?:string;address?:string;shopName?:string;city?:string;previousBalance?:number}){try{return await apiRequest<ApiCustomer>("/customers",{method:"POST",body:JSON.stringify(input)});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const id=crypto.randomUUID();await queueOfflineCustomer({id,...input});return {id,name:input.name,phone:input.phone||null,address:input.address||null,balance:0};}}
+export type ApiCustomer = { id:string; name:string; phone?:string|null; address?:string|null; shopName?:string|null; city?:string|null; previousBalance?:number; balance:number };
+export async function getCustomers(){try{return await apiRequest<ApiCustomer[]>("/customers");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await offlineExec("CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,address TEXT,shop_name TEXT,city TEXT,previous_balance REAL NOT NULL DEFAULT 0,balance REAL NOT NULL DEFAULT 0,updated_at TEXT NOT NULL)");try{await offlineExec("ALTER TABLE customers ADD COLUMN shop_name TEXT")}catch{}try{await offlineExec("ALTER TABLE customers ADD COLUMN city TEXT")}catch{}try{await offlineExec("ALTER TABLE customers ADD COLUMN previous_balance REAL NOT NULL DEFAULT 0")}catch{}return offlineQuery<ApiCustomer>(`SELECT id,name,phone,address,shop_name AS "shopName",city,previous_balance AS "previousBalance",balance FROM customers ORDER BY name`);}}
+export async function createCustomer(input:{name:string;phone?:string;address?:string;shopName?:string;city?:string;previousBalance?:number}){try{return await apiRequest<ApiCustomer>("/customers",{method:"POST",body:JSON.stringify(input)});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const id=crypto.randomUUID();await queueOfflineCustomer({id,...input});return {id,name:input.name,phone:input.phone||null,address:input.address||null,shopName:input.shopName||null,city:input.city||null,previousBalance:Number(input.previousBalance||0),balance:Number(input.previousBalance||0)};}}
 export async function recordCustomerPayment(id:string,amount:number,note?:string,details?:{method?:"cash"|"bank"|"cheque"|"other";chequeNumber?:string;bankName?:string;chequeDate?:string;chequeStatus?:"pending"|"cleared"|"bounced"}){
   try {
     return await apiRequest<{customerId:string;balance:number}>(`/customers/${id}/payment`,{method:"POST",body:JSON.stringify({amount,note,...details})});
   } catch (error) {
     if (!electronOffline() || !isNetworkFailure(error)) throw error;
+    if(details?.method==="cheque")throw new Error("Cheque payments need a server connection so pending/cleared status is not lost.");
     const paymentId=crypto.randomUUID();
     await queueOfflineCustomerPayment({id:paymentId,customerId:id,amount,note});
     const rows=await offlineQuery<{balance:number}>("SELECT balance FROM customers WHERE id=?",[id]);
