@@ -265,21 +265,47 @@ export async function queueOfflineSupplier(input:{id:string;name:string;phone?:s
   }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
 }
 
-export async function queueOfflineCustomerPayment(payment:{id:string;customerId:string;amount:number;note?:string}) {
+async function ensureOfflineCustomerTransactionSchema(){
+  await offlineDb.exec("CREATE TABLE IF NOT EXISTS customer_transactions (id TEXT PRIMARY KEY,customer_id TEXT NOT NULL,type TEXT NOT NULL,amount REAL NOT NULL,note TEXT,created_at TEXT NOT NULL,payment_method TEXT,cheque_number TEXT,bank_name TEXT,cheque_date TEXT,cheque_status TEXT,reference_id TEXT)");
+  const cols=await offlineDb.query<{name:string}>("PRAGMA table_info(customer_transactions)");
+  const have=new Set(cols.map(x=>x.name));
+  for(const [name,type] of [["payment_method","TEXT"],["cheque_number","TEXT"],["bank_name","TEXT"],["cheque_date","TEXT"],["cheque_status","TEXT"],["reference_id","TEXT"]] as const)if(!have.has(name))await offlineDb.exec("ALTER TABLE customer_transactions ADD COLUMN "+name+" "+type);
+}
+export async function queueOfflineCustomerPayment(payment:{id:string;customerId:string;amount:number;note?:string;method?:"cash"|"bank"|"cheque"|"other";chequeNumber?:string;bankName?:string;chequeDate?:string}) {
   if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
   const session=authStorage.getSession(); if(!session?.businessId||!session?.branchId)throw new Error("Offline payment cannot be queued without branch context.");
   if(payment.amount<=0)throw new Error("Payment amount must be positive.");
+  const method=payment.method||"cash";
+  if(method==="cheque"&&(!payment.chequeNumber?.trim()||!payment.bankName?.trim()||!payment.chequeDate))throw new Error("Cheque number, bank and date are required.");
   const now=new Date().toISOString(); await offlineDb.exec("BEGIN");
   try {
+    await ensureOfflineCustomerTransactionSchema();
     const rows=await offlineDb.query<{balance:number}>("SELECT balance FROM customers WHERE id=?",[payment.customerId]);
     if(!rows[0])throw new Error("Customer is not available offline.");
-    if(payment.amount>Number(rows[0].balance))throw new Error("Payment exceeds customer balance.");
-    await offlineDb.exec("CREATE TABLE IF NOT EXISTS customer_transactions (id TEXT PRIMARY KEY,customer_id TEXT NOT NULL,type TEXT NOT NULL,amount REAL NOT NULL,note TEXT,created_at TEXT NOT NULL)");
-    await offlineDb.exec("UPDATE customers SET balance=balance-?,updated_at=? WHERE id=?",[payment.amount,now,payment.customerId]);
-    await offlineDb.exec("INSERT INTO customer_transactions(id,customer_id,type,amount,note,created_at) VALUES(?,?,?,?,?,?)",[payment.id,payment.customerId,"payment",payment.amount,payment.note||"Offline customer payment",now]);
-    await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"customer_payment",payment.id,"create",JSON.stringify({...payment,businessId:session.businessId,branchId:session.branchId}),now,"pending"]);
+    if(method!=="cheque"&&payment.amount>Number(rows[0].balance))throw new Error("Payment exceeds customer balance.");
+    if(method!=="cheque")await offlineDb.exec("UPDATE customers SET balance=balance-?,updated_at=? WHERE id=?",[payment.amount,now,payment.customerId]);
+    await offlineDb.exec("INSERT INTO customer_transactions(id,customer_id,type,amount,note,created_at,payment_method,cheque_number,bank_name,cheque_date,cheque_status,reference_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",[payment.id,payment.customerId,method==="cheque"?"cheque_pending":"payment",payment.amount,payment.note||"Offline customer payment",now,method,method==="cheque"?payment.chequeNumber:null,method==="cheque"?payment.bankName:null,method==="cheque"?payment.chequeDate:null,method==="cheque"?"pending":null,payment.id]);
+    await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"customer_payment",payment.id,"create",JSON.stringify({...payment,method,businessId:session.businessId,branchId:session.branchId}),now,"pending"]);
     await offlineDb.exec("COMMIT");
   } catch(e){await offlineDb.exec("ROLLBACK");throw e;}
+}
+export async function queueOfflineCustomerChequeAction(input:{id:string;customerId:string;status:"cleared"|"bounced"}){
+  if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
+  const session=authStorage.getSession();if(!session?.businessId||!session?.branchId)throw new Error("Offline cheque update requires branch context.");
+  const now=new Date().toISOString();await offlineDb.exec("BEGIN");
+  try{
+    await ensureOfflineCustomerTransactionSchema();
+    const tx=await offlineDb.query<any>("SELECT id,amount,type,cheque_status FROM customer_transactions WHERE id=? AND customer_id=?",[input.id,input.customerId]);
+    if(!tx[0]||tx[0].type!=="cheque_pending"||tx[0].cheque_status!=="pending")throw new Error("Cheque is not pending in the offline ledger.");
+    if(input.status==="cleared"){
+      const c=await offlineDb.query<{balance:number}>("SELECT balance FROM customers WHERE id=?",[input.customerId]);
+      if(!c[0]||Number(c[0].balance)<Number(tx[0].amount))throw new Error("Cheque exceeds customer balance.");
+      await offlineDb.exec("UPDATE customers SET balance=balance-?,updated_at=? WHERE id=?",[Number(tx[0].amount),now,input.customerId]);
+      await offlineDb.exec("UPDATE customer_transactions SET type='payment',cheque_status='cleared' WHERE id=?",[input.id]);
+    }else await offlineDb.exec("UPDATE customer_transactions SET cheque_status='bounced' WHERE id=?",[input.id]);
+    await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"customer_cheque",input.id,"update",JSON.stringify({...input,businessId:session.businessId,branchId:session.branchId}),now,"pending"]);
+    await offlineDb.exec("COMMIT");
+  }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
 }
 export async function syncPendingSupplierPayments(){
   if(!isOnline()||!(await offlineDb.available()))return{synced:0,failed:0};
@@ -350,15 +376,28 @@ export async function syncPendingSuppliers(){
 
 export async function syncPendingCustomerPayments() {
   if(!isOnline()||!(await offlineDb.available()))return{synced:0,failed:0};
-  const rows=await offlineDb.query<{id:string;payload:string}>("SELECT id,payload FROM sync_queue WHERE entity='customer_payment' AND operation='create' AND status='pending' ORDER BY created_at");
   let synced=0,failed=0;
+  const rows=await offlineDb.query<{id:string;payload:string}>("SELECT id,payload FROM sync_queue WHERE entity='customer_payment' AND operation='create' AND status='pending' ORDER BY created_at");
   for(const row of rows)try{
     const p=JSON.parse(row.payload),s=authStorage.getSession();
     if(!s?.businessId||!s?.branchId||p.businessId!==s.businessId||p.branchId!==s.branchId)continue;
-    await apiRequest(`/customers/${p.customerId}/payment`,{method:"POST",body:JSON.stringify({amount:p.amount,note:p.note||"Offline customer payment",clientReference:p.id})});
+    await apiRequest(`/customers/${p.customerId}/payment`,{method:"POST",body:JSON.stringify({amount:p.amount,note:p.note||"Offline customer payment",method:p.method||"cash",chequeNumber:p.chequeNumber,bankName:p.bankName,chequeDate:p.chequeDate,clientReference:p.id})});
     await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
   }catch(e){
     const message=e instanceof Error?e.message:"Customer payment sync failed",status=e instanceof ApiError?e.status:0;
+    const permanent=status>=400&&status<500&&status!==401&&status!==408&&status!==429;
+    await offlineDb.exec("UPDATE sync_queue SET status=?,attempts=attempts+1,last_error=? WHERE id=?",[permanent?"failed":"pending",message,row.id]);failed++;
+  }
+  const chequeRows=await offlineDb.query<{id:string;payload:string}>("SELECT id,payload FROM sync_queue WHERE entity='customer_cheque' AND operation='update' AND status='pending' ORDER BY created_at");
+  for(const row of chequeRows)try{
+    const p=JSON.parse(row.payload),s=authStorage.getSession();
+    if(!s?.businessId||!s?.branchId||p.businessId!==s.businessId||p.branchId!==s.branchId)continue;
+    const payment=await offlineDb.query<{status:string}>("SELECT status FROM sync_queue WHERE entity='customer_payment' AND entity_id=? ORDER BY created_at DESC LIMIT 1",[p.id]);
+    if(!payment[0]||payment[0].status!=="synced")continue;
+    await apiRequest(`/customers/${p.customerId}/transactions/${p.id}/cheque`,{method:"PUT",body:JSON.stringify({status:p.status})});
+    await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
+  }catch(e){
+    const message=e instanceof Error?e.message:"Customer cheque sync failed",status=e instanceof ApiError?e.status:0;
     const permanent=status>=400&&status<500&&status!==401&&status!==408&&status!==429;
     await offlineDb.exec("UPDATE sync_queue SET status=?,attempts=attempts+1,last_error=? WHERE id=?",[permanent?"failed":"pending",message,row.id]);failed++;
   }
