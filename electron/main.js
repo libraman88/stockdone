@@ -82,13 +82,13 @@ app.whenReady().then(() => {
       await printWindow.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(String(html)));
       // Wait for the document and fonts/layout to finish before measuring/printing.
       await printWindow.webContents.executeJavaScript("document.fonts ? document.fonts.ready.then(() => true) : true");
-      const metrics = await printWindow.webContents.executeJavaScript("({height: Math.ceil(Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)), width: Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth) )})");
+      const metrics = await printWindow.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => { const body=document.body; const root=document.documentElement; resolve({height:Math.ceil(Math.max(body.scrollHeight,root.scrollHeight,body.getBoundingClientRect().height)),width:Math.ceil(Math.max(body.scrollWidth,root.scrollWidth,body.getBoundingClientRect().width))}); })))");
       const options = {
         printBackground: true,
         margins: { marginType: "none" },
         ...(paper === "80mm"
           // Receipt roll: 80 mm wide with height measured from the rendered bill.
-          ? { pageSize: { width: 80000, height: Math.max(50000, Math.min(2000000, Math.ceil((metrics.height + 24) * 264.583))) } }
+          ? { pageSize: { width: 80000, height: Math.max(120000, Math.min(2000000, Math.ceil((metrics.height + 24) * 264.583))) } }
           // Zebra TLP 2844-Z: dedicated 2 x 1 inch label (Electron dimensions are microns).
           : paper === "2x1"
             ? { pageSize: { width: 50800, height: 25400 } }
