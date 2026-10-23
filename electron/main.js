@@ -87,10 +87,12 @@ app.whenReady().then(() => {
         printBackground: true,
         margins: { marginType: "none" },
         ...(paper === "80mm"
-          // Electron's pageSize uses microns. Use a content-sized receipt, not a 2-metre page
-          // or the printer driver's unrelated default page size.
+          // Receipt roll: 80 mm wide with height measured from the rendered bill.
           ? { pageSize: { width: 80000, height: Math.max(50000, Math.min(2000000, Math.ceil((metrics.height + 24) * 264.583))) } }
-          : { pageSize: "A4" })
+          // Zebra TLP 2844-Z: dedicated 2 x 1 inch label (Electron dimensions are microns).
+          : paper === "2x1"
+            ? { pageSize: { width: 50800, height: 25400 } }
+            : { pageSize: "A4" })
       };
       const runPrint = (printOptions) => new Promise((resolve, reject) => {
         printWindow.webContents.print(printOptions, (success, failureReason) => {
