@@ -100,7 +100,14 @@ app.whenReady().then(() => {
           else reject(new Error(failureReason || "Windows did not accept the print job."));
         });
       });
-      if (deviceName) {
+      // Label printers frequently use driver-defined media stocks. A silent job can be
+      // accepted by Windows while the Zebra driver still uses the wrong stock/roll size.
+      // Always show the native print dialog for labels so the user can select the Zebra
+      // printer and confirm its installed 2 x 1 inch media before the job is sent.
+      if (paper === "label" || paper === "2x1") {
+        printWindow.show();
+        await runPrint({ ...options, silent: false });
+      } else if (deviceName) {
         try {
           await runPrint({ ...options, silent: true, deviceName });
         } catch (error) {
