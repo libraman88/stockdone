@@ -22,8 +22,8 @@ CREATE INDEX IF NOT EXISTS idx_stock_movements_variant_date ON stock_movements(v
 CREATE INDEX IF NOT EXISTS idx_products_sku ON products(business_id,sku);
 CREATE INDEX IF NOT EXISTS idx_variants_barcode ON product_variants(barcode);
 
-CREATE TABLE IF NOT EXISTS customers (id UUID PRIMARY KEY,business_id UUID NOT NULL REFERENCES businesses(id),name TEXT NOT NULL,phone TEXT,address TEXT,balance NUMERIC(12,2) NOT NULL DEFAULT 0,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
-CREATE TABLE IF NOT EXISTS customer_transactions (id UUID PRIMARY KEY,customer_id UUID NOT NULL REFERENCES customers(id),type TEXT NOT NULL CHECK(type IN ('credit_sale','payment','debit_adjustment','credit_adjustment')),amount NUMERIC(12,2) NOT NULL,reference_id UUID,note TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS customers (id UUID PRIMARY KEY,business_id UUID NOT NULL REFERENCES businesses(id),name TEXT NOT NULL,phone TEXT,address TEXT,shop_name TEXT,city TEXT,previous_balance NUMERIC(12,2) NOT NULL DEFAULT 0,balance NUMERIC(12,2) NOT NULL DEFAULT 0,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS customer_transactions (id UUID PRIMARY KEY,customer_id UUID NOT NULL REFERENCES customers(id),type TEXT NOT NULL CHECK(type IN ('credit_sale','payment','debit_adjustment','credit_adjustment','cheque_pending')),amount NUMERIC(12,2) NOT NULL,reference_id UUID,note TEXT,payment_method TEXT,cheque_number TEXT,bank_name TEXT,cheque_date DATE,cheque_status TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
 CREATE INDEX IF NOT EXISTS idx_customer_transactions_customer_date ON customer_transactions(customer_id,created_at DESC);
 
 CREATE TABLE IF NOT EXISTS returns (id UUID PRIMARY KEY,business_id UUID NOT NULL REFERENCES businesses(id),branch_id UUID NOT NULL REFERENCES branches(id),sale_id UUID NOT NULL REFERENCES sales(id),type TEXT NOT NULL CHECK(type IN ('return','exchange')),refund_amount NUMERIC(12,2) NOT NULL DEFAULT 0,price_difference NUMERIC(12,2) NOT NULL DEFAULT 0,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
