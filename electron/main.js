@@ -80,18 +80,19 @@ app.whenReady().then(() => {
     });
     try {
       await printWindow.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(String(html)));
-      // Wait for the document and fonts/layout to finish before measuring/printing.
       await printWindow.webContents.executeJavaScript("document.fonts ? document.fonts.ready.then(() => true) : true");
-      const metrics = await printWindow.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => { const body=document.body; const root=document.documentElement; resolve({height:Math.ceil(Math.max(body.scrollHeight,root.scrollHeight,body.getBoundingClientRect().height)),width:Math.ceil(Math.max(body.scrollWidth,root.scrollWidth,body.getBoundingClientRect().width))}); })))");
+      await printWindow.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+      const widthMm = Math.max(10, Math.min(300, Number(labelSizeMm?.width) || 50.8));
+      const heightMm = Math.max(10, Math.min(300, Number(labelSizeMm?.height) || 25.4));
+      const metrics = await printWindow.webContents.executeJavaScript("({height:Math.ceil(Math.max(document.body.scrollHeight,document.documentElement.scrollHeight,document.body.getBoundingClientRect().height)),width:Math.ceil(Math.max(document.body.scrollWidth,document.documentElement.scrollWidth,document.documentElement.getBoundingClientRect().width))})");
+      const isLabel = paper === "label" || paper === "2x1";
       const options = {
         printBackground: true,
         margins: { marginType: "none" },
         ...(paper === "80mm"
-          // Receipt roll: 80 mm wide with height measured from the rendered bill.
           ? { pageSize: { width: 80000, height: Math.max(120000, Math.min(2000000, Math.ceil((metrics.height + 24) * 264.583))) } }
-          // Zebra TLP 2844-Z: dedicated 2 x 1 inch label (Electron dimensions are microns).
-          : paper === "2x1" || paper === "label"
-            ? { pageSize: { width: Math.round(Math.max(10, Math.min(300, Number(labelSizeMm?.width) || 50.8)) * 1000), height: Math.round(Math.max(10, Math.min(300, Number(labelSizeMm?.height) || 25.4)) * 1000) } }
+          : isLabel
+            ? { pageSize: { width: Math.round(widthMm * 1000), height: Math.round(heightMm * 1000) } }
             : { pageSize: "A4" })
       };
       const runPrint = (printOptions) => new Promise((resolve, reject) => {
@@ -100,21 +101,26 @@ app.whenReady().then(() => {
           else reject(new Error(failureReason || "Windows did not accept the print job."));
         });
       });
-      // Label printers frequently use driver-defined media stocks. A silent job can be
-      // accepted by Windows while the Zebra driver still uses the wrong stock/roll size.
-      // Always show the native print dialog for labels so the user can select the Zebra
-      // printer and confirm its installed 2 x 1 inch media before the job is sent.
-      if (paper === "label" || paper === "2x1") {
-        // Keep the selected StockDone label printer as the dialog's target.
-        // Previously the label branch omitted deviceName, so Windows could open
-        // the dialog on the system-default printer even when Zebra was selected.
+
+      if (isLabel && deviceName) {
+        // Submit to the exact saved Windows printer without opening a second printer-selection
+        // dialog. This avoids the native dialog overriding the custom 2 x 1 inch media size.
+        // If Windows rejects the direct job (for example, a stale printer name), fall back
+        // to the interactive dialog so the user can still choose the printer manually.
+        try {
+          await runPrint({ ...options, silent: true, deviceName });
+        } catch (directError) {
+          console.warn("Direct label print failed; opening printer dialog:", directError.message);
+          printWindow.show();
+          await runPrint({ ...options, silent: false });
+        }
+      } else if (isLabel) {
         printWindow.show();
-        await runPrint({ ...options, silent: false, ...(deviceName ? { deviceName } : {}) });
+        await runPrint({ ...options, silent: false });
       } else if (deviceName) {
         try {
           await runPrint({ ...options, silent: true, deviceName });
         } catch (error) {
-          // If the saved device name is stale, let the user choose the actual installed printer.
           printWindow.show();
           await runPrint({ ...options, silent: false });
         }
