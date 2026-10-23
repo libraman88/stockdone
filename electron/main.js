@@ -85,11 +85,17 @@ app.whenReady().then(() => {
           else reject(new Error(failureReason || "Windows did not accept the print job."));
         });
       });
-      try {
-        await runPrint({silent:Boolean(deviceName),deviceName:deviceName||undefined,pageSize,printBackground:true});
-      } catch (error) {
-        if (!deviceName) throw error;
-        // A saved printer can be renamed or unavailable; show Windows' print dialog instead of silently failing.
+      if (deviceName) {
+        try {
+          await runPrint({silent:true,deviceName,pageSize,printBackground:true});
+        } catch (error) {
+          // Saved printer unavailable: show the print window and let the user choose a working printer.
+          printWindow.show();
+          await runPrint({silent:false,pageSize,printBackground:true});
+        }
+      } else {
+        // A non-silent print dialog cannot be interacted with reliably from a hidden BrowserWindow.
+        printWindow.show();
         await runPrint({silent:false,pageSize,printBackground:true});
       }
       if (!printWindow.isDestroyed()) printWindow.close();
