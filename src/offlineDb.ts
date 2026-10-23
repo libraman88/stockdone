@@ -237,13 +237,17 @@ export async function queueOfflineInventoryAdjustment(input:{id:string;variantId
   }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
 }
 
-export async function queueOfflineCustomer(input:{id:string;name:string;phone?:string;address?:string}) {
+export async function queueOfflineCustomer(input:{id:string;name:string;phone?:string;address?:string;shopName?:string;city?:string;previousBalance?:number}) {
   if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
   const session=authStorage.getSession(); if(!session?.businessId||!session?.branchId)throw new Error("Offline customer requires branch context.");
   const now=new Date().toISOString(); await offlineDb.exec("BEGIN");
   try{
-    await offlineDb.exec("CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,address TEXT,balance REAL NOT NULL DEFAULT 0,updated_at TEXT NOT NULL)");
-    await offlineDb.exec("INSERT INTO customers(id,name,phone,address,balance,updated_at) VALUES(?,?,?,?,0,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,phone=excluded.phone,address=excluded.address,updated_at=excluded.updated_at",[input.id,input.name,input.phone??null,input.address??null,now]);
+    await offlineDb.exec("CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,address TEXT,shop_name TEXT,city TEXT,previous_balance REAL NOT NULL DEFAULT 0,balance REAL NOT NULL DEFAULT 0,updated_at TEXT NOT NULL)");
+    try{await offlineDb.exec("ALTER TABLE customers ADD COLUMN shop_name TEXT")}catch{}
+    try{await offlineDb.exec("ALTER TABLE customers ADD COLUMN city TEXT")}catch{}
+    try{await offlineDb.exec("ALTER TABLE customers ADD COLUMN previous_balance REAL NOT NULL DEFAULT 0")}catch{}
+    const opening=Number(input.previousBalance||0);
+    await offlineDb.exec("INSERT INTO customers(id,name,phone,address,shop_name,city,previous_balance,balance,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,phone=excluded.phone,address=excluded.address,shop_name=excluded.shop_name,city=excluded.city,previous_balance=excluded.previous_balance,updated_at=excluded.updated_at",[input.id,input.name,input.phone??null,input.address??null,input.shopName??null,input.city??null,opening,opening,now]);
     await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"customer",input.id,"create",JSON.stringify({...input,businessId:session.businessId,branchId:session.branchId}),now,"pending"]);
     await offlineDb.exec("COMMIT");
   }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
