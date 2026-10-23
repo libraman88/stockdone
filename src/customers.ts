@@ -3,13 +3,21 @@ export type Customer = {
   name: string;
   phone: string;
   address: string;
+  shopName?: string;
+  city?: string;
+  previousBalance?: number;
   balance: number;
 };
 
 export type CustomerTransaction = {
   id: string;
   customerId: string;
-  type: "credit_sale" | "payment" | "return";
+  type: "credit_sale" | "payment" | "return" | "debit_adjustment" | "credit_adjustment";
+  paymentMethod?: "cash" | "bank" | "cheque" | "other";
+  chequeNumber?: string;
+  bankName?: string;
+  chequeDate?: string;
+  chequeStatus?: "pending" | "cleared" | "bounced";
   amount: number;
   reference?: string;
   note?: string;
