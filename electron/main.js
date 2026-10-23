@@ -78,7 +78,9 @@ app.whenReady().then(() => {
     try {
       await printWindow.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(String(html)));
       await new Promise(resolve => setTimeout(resolve, 500));
-      const pageSize = paper === "80mm" ? {width:80000,height:2000000} : "A4";
+      // Thermal drivers often reject an oversized 2-metre custom page and eject a tiny blank strip.
+      // Let the selected printer/receipt driver use its configured roll size; invoice CSS sets the 80mm width.
+      const pageSize = paper === "80mm" ? undefined : "A4";
       const runPrint = (options) => new Promise((resolve, reject) => {
         printWindow.webContents.print(options, (success, failureReason) => {
           if (success) resolve({ok:true});
@@ -87,11 +89,11 @@ app.whenReady().then(() => {
       });
       if (deviceName) {
         try {
-          await runPrint({silent:true,deviceName,pageSize,printBackground:true});
+          await runPrint({silent:true,deviceName,...(pageSize?{pageSize}:{}),printBackground:true,margins:{marginType:"none"}});
         } catch (error) {
           // Saved printer unavailable: show the print window and let the user choose a working printer.
           printWindow.show();
-          await runPrint({silent:false,pageSize,printBackground:true});
+          await runPrint({silent:false,...(pageSize?{pageSize}:{}),printBackground:true,margins:{marginType:"none"}});
         }
       } else {
         // A non-silent print dialog cannot be interacted with reliably from a hidden BrowserWindow.
