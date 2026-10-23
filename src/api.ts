@@ -141,16 +141,7 @@ export type ApiCustomer = { id:string; name:string; phone?:string|null; address?
 export async function getCustomers(){try{return await apiRequest<ApiCustomer[]>("/customers");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await offlineExec("CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,address TEXT,shop_name TEXT,city TEXT,previous_balance REAL NOT NULL DEFAULT 0,balance REAL NOT NULL DEFAULT 0,updated_at TEXT NOT NULL)");try{await offlineExec("ALTER TABLE customers ADD COLUMN shop_name TEXT")}catch{}try{await offlineExec("ALTER TABLE customers ADD COLUMN city TEXT")}catch{}try{await offlineExec("ALTER TABLE customers ADD COLUMN previous_balance REAL NOT NULL DEFAULT 0")}catch{}return offlineQuery<ApiCustomer>(`SELECT id,name,phone,address,shop_name AS "shopName",city,previous_balance AS "previousBalance",balance FROM customers ORDER BY name`);}}
 export async function createCustomer(input:{name:string;phone?:string;address?:string;shopName?:string;city?:string;previousBalance?:number}){try{return await apiRequest<ApiCustomer>("/customers",{method:"POST",body:JSON.stringify(input)});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const id=crypto.randomUUID();await queueOfflineCustomer({id,...input});return {id,name:input.name,phone:input.phone||null,address:input.address||null,shopName:input.shopName||null,city:input.city||null,previousBalance:Number(input.previousBalance||0),balance:Number(input.previousBalance||0)};}}
 export async function recordCustomerPayment(id:string,amount:number,note?:string,details?:{method?:"cash"|"bank"|"cheque"|"other";chequeNumber?:string;bankName?:string;chequeDate?:string;chequeStatus?:"pending"|"cleared"|"bounced"}){
-  try {
-    return await apiRequest<{customerId:string;balance:number}>(`/customers/${id}/payment`,{method:"POST",body:JSON.stringify({amount,note,...details})});
-  } catch (error) {
-    if (!electronOffline() || !isNetworkFailure(error)) throw error;
-    if(details?.method==="cheque")throw new Error("Cheque payments need a server connection so pending/cleared status is not lost.");
-    const paymentId=crypto.randomUUID();
-    await queueOfflineCustomerPayment({id:paymentId,customerId:id,amount,note});
-    const rows=await offlineQuery<{balance:number}>("SELECT balance FROM customers WHERE id=?",[id]);
-    return {customerId:id,balance:Number(rows[0]?.balance||0)};
-  }
+  return apiRequest<{customerId:string;balance:number;transactionId?:string}>(`/customers/${id}/payment`,{method:"POST",body:JSON.stringify({amount,note,...details})});
 }
 
 export type ApiReturnItem={variantId:string;quantity:number;unitPrice:number};
@@ -409,7 +400,7 @@ export async function getReturns(){try{return await apiRequest<ApiReturnRecord[]
 
 export type CustomerTransactionRow={id:string;customer_id:string;type:string;amount:number;note:string|null;created_at:string};
 export async function updateCustomerCheque(customerId:string,transactionId:string,status:"cleared"|"bounced"){return apiRequest<{ok:boolean;status:string}>(`/customers/${customerId}/transactions/${transactionId}/cheque`,{method:"PUT",body:JSON.stringify({status})});}
-export async function getCustomerTransactions(customerId:string){try{return await apiRequest<CustomerTransactionRow[]>(`/customers/${customerId}/transactions`);}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await offlineExec("CREATE TABLE IF NOT EXISTS customer_transactions (id TEXT PRIMARY KEY,customer_id TEXT NOT NULL,type TEXT NOT NULL,amount REAL NOT NULL,note TEXT,created_at TEXT NOT NULL)");return offlineQuery<CustomerTransactionRow>("SELECT id,customer_id,type,amount,note,created_at FROM customer_transactions WHERE customer_id=? ORDER BY created_at DESC",[customerId]);}}
+export async function getCustomerTransactions(customerId:string){try{return await apiRequest<CustomerTransactionRow[]>(`/customers/${customerId}/transactions`);}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await offlineExec("CREATE TABLE IF NOT EXISTS customer_transactions (id TEXT PRIMARY KEY,customer_id TEXT NOT NULL,type TEXT NOT NULL,amount REAL NOT NULL,note TEXT,created_at TEXT NOT NULL)");return offlineQuery<CustomerTransactionRow>("SELECT * FROM customer_transactions WHERE customer_id=? ORDER BY created_at DESC",[customerId]);}}
 
 export type OfflineStockDifference={variant_id:string;name:string;sku:string;size:string|null;color:string|null;server_quantity:number;local_quantity:number|null;difference:number};
 export function reconcileOfflineStock(items:{variantId:string;quantity:number}[]){return apiRequest<{checked:number;differences:OfflineStockDifference[]}>("/inventory/reconcile-offline",{method:"POST",body:JSON.stringify({items})});}
