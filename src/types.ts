@@ -56,4 +56,7 @@ export type InvoiceSettings = {
   footer: string;
   paper: "A4" | "80mm";
   printerName?: string;
+  labelPrinterName?: string;
+  labelWidthMm?: number;
+  labelHeightMm?: number;
 };
