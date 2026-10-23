@@ -105,8 +105,11 @@ app.whenReady().then(() => {
       // Always show the native print dialog for labels so the user can select the Zebra
       // printer and confirm its installed 2 x 1 inch media before the job is sent.
       if (paper === "label" || paper === "2x1") {
+        // Keep the selected StockDone label printer as the dialog's target.
+        // Previously the label branch omitted deviceName, so Windows could open
+        // the dialog on the system-default printer even when Zebra was selected.
         printWindow.show();
-        await runPrint({ ...options, silent: false });
+        await runPrint({ ...options, silent: false, ...(deviceName ? { deviceName } : {}) });
       } else if (deviceName) {
         try {
           await runPrint({ ...options, silent: true, deviceName });
