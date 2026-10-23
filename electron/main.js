@@ -73,7 +73,7 @@ app.whenReady().then(() => {
     if (!mainWindow) return [];
     return mainWindow.webContents.getPrintersAsync();
   });
-  ipcMain.handle("hardware:print", async (_event, html, paper = "A4", deviceName = "") => {
+  ipcMain.handle("hardware:print", async (_event, html, paper = "A4", deviceName = "", labelSizeMm) => {
     const printWindow = new BrowserWindow({
       show: false,
       webPreferences: { contextIsolation: true, nodeIntegration: false }
@@ -90,8 +90,8 @@ app.whenReady().then(() => {
           // Receipt roll: 80 mm wide with height measured from the rendered bill.
           ? { pageSize: { width: 80000, height: Math.max(120000, Math.min(2000000, Math.ceil((metrics.height + 24) * 264.583))) } }
           // Zebra TLP 2844-Z: dedicated 2 x 1 inch label (Electron dimensions are microns).
-          : paper === "2x1"
-            ? { pageSize: { width: 50800, height: 25400 } }
+          : paper === "2x1" || paper === "label"
+            ? { pageSize: { width: Math.round(Math.max(10, Math.min(300, Number(labelSizeMm?.width) || 50.8)) * 1000), height: Math.round(Math.max(10, Math.min(300, Number(labelSizeMm?.height) || 25.4)) * 1000) } }
             : { pageSize: "A4" })
       };
       const runPrint = (printOptions) => new Promise((resolve, reject) => {
