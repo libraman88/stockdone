@@ -11,7 +11,7 @@ contextBridge.exposeInMainWorld("stockDoneUpdates", {
 
 contextBridge.exposeInMainWorld("stockDoneHardware", {
   printers: () => ipcRenderer.invoke("hardware:printers"),
-  print: (html, paper = "A4", deviceName = "") => ipcRenderer.invoke("hardware:print", html, paper, deviceName)
+  print: (html, paper = "A4", deviceName = "", labelSizeMm) => ipcRenderer.invoke("hardware:print", html, paper, deviceName, labelSizeMm)
 });
 
 contextBridge.exposeInMainWorld("stockDoneOffline", {
