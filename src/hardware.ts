@@ -1,5 +1,5 @@
 export type PrinterPaper="80mm"|"2x1"|"A4";
-export type HardwareBridge={printers:()=>Promise<Array<{name:string;displayName:string;description?:string;status?:number}>>;print:(html:string,paper?:PrinterPaper,deviceName?:string)=>Promise<{ok:boolean}>};
+export type HardwareBridge={printers:()=>Promise<Array<{name:string;displayName:string;description?:string;status?:number}>>;print:(html:string,paper?:PrinterPaper,deviceName?:string,labelSizeMm?:{width:number;height:number})=>Promise<{ok:boolean}>};
 declare global { interface Window { stockDoneHardware?: HardwareBridge; } }
 export function handleScannerInput(value:string,onScan:(code:string)=>void,settings=getScannerSettings()){const code=value.trim().replace(/[\\r\\n]+$/,"");if(!settings.enabled||!code)return;onScan(code)}
 export function scannerBufferInput(current:string,key:string){if(key.length!==1)return current;return current+key}
@@ -7,7 +7,7 @@ export function printerSettings(paper:PrinterPaper){return {paper,thermal:paper=
 export async function getPrinters(){return window.stockDoneHardware?.printers() ?? []}
 export function getSavedPrinterName(){try{return localStorage.getItem("stockdone.printer.name")||""}catch{return ""}}
 export function savePrinterName(name:string){try{localStorage.setItem("stockdone.printer.name",name)}catch{}}
-export async function printHtml(html:string,paper:PrinterPaper="A4",deviceName=""){const printableHtml=html.replace(/<script\b[^>]*>[\s\S]*?\bwindow\.print\s*\(\s*\)[\s\S]*?<\/script>/gi,"");if(window.stockDoneHardware)return window.stockDoneHardware.print(printableHtml,paper,deviceName);const w=window.open("","_blank","width=500,height=700");if(!w)throw new Error("Print window was blocked. Allow pop-ups for StockDone, then try again.");w.document.open();w.document.write(printableHtml);w.document.close();w.focus();window.setTimeout(()=>w.print(),500);return {ok:true}}
+export async function printHtml(html:string,paper:PrinterPaper="A4",deviceName="",labelSizeMm?:{width:number;height:number}){const printableHtml=html.replace(/<script\b[^>]*>[\s\S]*?\bwindow\.print\s*\(\s*\)[\s\S]*?<\/script>/gi,"");if(window.stockDoneHardware)return window.stockDoneHardware.print(printableHtml,paper,deviceName,labelSizeMm);const w=window.open("","_blank","width=500,height=700");if(!w)throw new Error("Print window was blocked. Allow pop-ups for StockDone, then try again.");w.document.open();w.document.write(printableHtml);w.document.close();w.focus();window.setTimeout(()=>w.print(),500);return {ok:true}}
 
 export type ScannerSettings={enabled:boolean,sound:boolean,autoFocus:boolean,delayMs:number};
 const SCANNER_KEY="stockdone.scanner.settings";
