@@ -314,7 +314,7 @@ function BarcodeTools({products}:{products:Product[]}){
  const [selectedId,setSelectedId]=useState(products[0]?.id||""),[qty,setQty]=useState(1),[status,setStatus]=useState("");
  const [scannerSettings,setScannerSettings]=useState(getScannerSettings());
  const [printers,setPrinters]=useState<Array<{name:string;displayName:string}>>([]);
- const [selectedPrinter,setSelectedPrinter]=useState(()=>{const s=settingsStorage.get();return (s as any).printerName||getSavedPrinterName()});
+ const [selectedPrinter,setSelectedPrinter]=useState(()=>{const s=settingsStorage.get();return (s as any).labelPrinterName||(s as any).printerName||getSavedPrinterName()});
  const [loadingPrinters,setLoadingPrinters]=useState(false);
  const [labelWidthMm,setLabelWidthMm]=useState(()=>Number((settingsStorage.get() as any).labelWidthMm)||50.8);
  const [labelHeightMm,setLabelHeightMm]=useState(()=>Number((settingsStorage.get() as any).labelHeightMm)||25.4);
@@ -323,8 +323,8 @@ function BarcodeTools({products}:{products:Product[]}){
  useEffect(()=>{void refreshPrinters()},[]);
  const product=products.find(p=>p.id===selectedId);
  const saveScanner=()=>{saveScannerSettings(scannerSettings);setStatus("Scanner settings saved.")};
- const saveLabelPrinter=()=>{savePrinterName(selectedPrinter);const s=settingsStorage.get();settingsStorage.save({...s,printerName:selectedPrinter,labelPrinterName:selectedPrinter,labelWidthMm,labelHeightMm} as any);setStatus(selectedPrinter?"Label settings saved: "+selectedPrinter+" · "+labelWidthMm+" × "+labelHeightMm+" mm":"Label settings saved. Select a printer to print.")};
- const printLabelHtml=async(html:string)=>{if(!selectedPrinter)throw new Error("Pehle label printer select karein aur Save Label Settings dabayein.");const w=Math.max(10,Math.min(300,Number(labelWidthMm)||50.8));const h=Math.max(10,Math.min(300,Number(labelHeightMm)||25.4));savePrinterName(selectedPrinter);const s=settingsStorage.get();settingsStorage.save({...s,printerName:selectedPrinter,labelPrinterName:selectedPrinter,labelWidthMm:w,labelHeightMm:h} as any);await printHtml(html,"label",selectedPrinter,{width:w,height:h})};
+ const saveLabelPrinter=()=>{savePrinterName(selectedPrinter);const s=settingsStorage.get();settingsStorage.save({...s,labelPrinterName:selectedPrinter,labelWidthMm,labelHeightMm} as any);setStatus(selectedPrinter?"Label settings saved: "+selectedPrinter+" · "+labelWidthMm+" × "+labelHeightMm+" mm":"Label settings saved. Select a printer to print.")};
+ const printLabelHtml=async(html:string)=>{if(!selectedPrinter)throw new Error("Pehle label printer select karein aur Save Label Settings dabayein.");const w=Math.max(10,Math.min(300,Number(labelWidthMm)||50.8));const h=Math.max(10,Math.min(300,Number(labelHeightMm)||25.4));savePrinterName(selectedPrinter);const s=settingsStorage.get();settingsStorage.save({...s,labelPrinterName:selectedPrinter,labelWidthMm:w,labelHeightMm:h} as any);await printHtml(html,"label",selectedPrinter,{width:w,height:h})};
  const printQr=async()=>{
   if(!product){setStatus("Pehle product select karein.");return}
   try{
