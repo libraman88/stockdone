@@ -74,34 +74,44 @@ app.whenReady().then(() => {
     return mainWindow.webContents.getPrintersAsync();
   });
   ipcMain.handle("hardware:print", async (_event, html, paper = "A4", deviceName = "") => {
-    const printWindow = new BrowserWindow({show:false, webPreferences:{contextIsolation:true,nodeIntegration:false}});
+    const printWindow = new BrowserWindow({
+      show: false,
+      webPreferences: { contextIsolation: true, nodeIntegration: false }
+    });
     try {
       await printWindow.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(String(html)));
-      await new Promise(resolve => setTimeout(resolve, 500));
-      // Thermal drivers often reject an oversized 2-metre custom page and eject a tiny blank strip.
-      // Let the selected printer/receipt driver use its configured roll size; invoice CSS sets the 80mm width.
-      const pageSize = paper === "80mm" ? undefined : "A4";
-      const runPrint = (options) => new Promise((resolve, reject) => {
-        printWindow.webContents.print(options, (success, failureReason) => {
-          if (success) resolve({ok:true});
+      // Wait for the document and fonts/layout to finish before measuring/printing.
+      await printWindow.webContents.executeJavaScript("document.fonts ? document.fonts.ready.then(() => true) : true");
+      const metrics = await printWindow.webContents.executeJavaScript("({height: Math.ceil(Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)), width: Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth) )})");
+      const options = {
+        printBackground: true,
+        margins: { marginType: "none" },
+        ...(paper === "80mm"
+          // Electron's pageSize uses microns. Use a content-sized receipt, not a 2-metre page
+          // or the printer driver's unrelated default page size.
+          ? { pageSize: { width: 80000, height: Math.max(50000, Math.min(2000000, Math.ceil((metrics.height + 24) * 264.583))) } }
+          : { pageSize: "A4" })
+      };
+      const runPrint = (printOptions) => new Promise((resolve, reject) => {
+        printWindow.webContents.print(printOptions, (success, failureReason) => {
+          if (success) resolve({ ok: true });
           else reject(new Error(failureReason || "Windows did not accept the print job."));
         });
       });
       if (deviceName) {
         try {
-          await runPrint({silent:true,deviceName,...(pageSize?{pageSize}:{}),printBackground:true,margins:{marginType:"none"}});
+          await runPrint({ ...options, silent: true, deviceName });
         } catch (error) {
-          // Saved printer unavailable: show the print window and let the user choose a working printer.
+          // If the saved device name is stale, let the user choose the actual installed printer.
           printWindow.show();
-          await runPrint({silent:false,...(pageSize?{pageSize}:{}),printBackground:true,margins:{marginType:"none"}});
+          await runPrint({ ...options, silent: false });
         }
       } else {
-        // A non-silent print dialog cannot be interacted with reliably from a hidden BrowserWindow.
         printWindow.show();
-        await runPrint({silent:false,...(pageSize?{pageSize}:{}),printBackground:true,margins:{marginType:"none"}});
+        await runPrint({ ...options, silent: false });
       }
       if (!printWindow.isDestroyed()) printWindow.close();
-      return {ok:true};
+      return { ok: true };
     } catch (error) {
       if (!printWindow.isDestroyed()) printWindow.close();
       throw error;
