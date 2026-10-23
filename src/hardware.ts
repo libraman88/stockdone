@@ -1,4 +1,4 @@
-export type PrinterPaper="80mm"|"2x1"|"A4";
+export type PrinterPaper="80mm"|"2x1"|"label"|"A4";
 export type HardwareBridge={printers:()=>Promise<Array<{name:string;displayName:string;description?:string;status?:number}>>;print:(html:string,paper?:PrinterPaper,deviceName?:string,labelSizeMm?:{width:number;height:number})=>Promise<{ok:boolean}>};
 declare global { interface Window { stockDoneHardware?: HardwareBridge; } }
 export function handleScannerInput(value:string,onScan:(code:string)=>void,settings=getScannerSettings()){const code=value.trim().replace(/[\\r\\n]+$/,"");if(!settings.enabled||!code)return;onScan(code)}
