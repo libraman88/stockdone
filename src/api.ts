@@ -139,10 +139,10 @@ export async function createPurchase(input: { invoiceNo: string; supplierId?: st
 
 export type ApiCustomer = { id:string; name:string; phone?:string|null; address?:string|null; balance:number };
 export async function getCustomers(){try{return await apiRequest<ApiCustomer[]>("/customers");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await offlineExec("CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,address TEXT,balance REAL NOT NULL DEFAULT 0,updated_at TEXT NOT NULL)");return offlineQuery<ApiCustomer>("SELECT id,name,phone,address,balance FROM customers ORDER BY name");}}
-export async function createCustomer(input:{name:string;phone?:string;address?:string}){try{return await apiRequest<ApiCustomer>("/customers",{method:"POST",body:JSON.stringify(input)});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const id=crypto.randomUUID();await queueOfflineCustomer({id,...input});return {id,name:input.name,phone:input.phone||null,address:input.address||null,balance:0};}}
-export async function recordCustomerPayment(id:string,amount:number,note?:string){
+export async function createCustomer(input:{name:string;phone?:string;address?:string;shopName?:string;city?:string;previousBalance?:number}){try{return await apiRequest<ApiCustomer>("/customers",{method:"POST",body:JSON.stringify(input)});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const id=crypto.randomUUID();await queueOfflineCustomer({id,...input});return {id,name:input.name,phone:input.phone||null,address:input.address||null,balance:0};}}
+export async function recordCustomerPayment(id:string,amount:number,note?:string,details?:{method?:"cash"|"bank"|"cheque"|"other";chequeNumber?:string;bankName?:string;chequeDate?:string;chequeStatus?:"pending"|"cleared"|"bounced"}){
   try {
-    return await apiRequest<{customerId:string;balance:number}>(`/customers/${id}/payment`,{method:"POST",body:JSON.stringify({amount,note})});
+    return await apiRequest<{customerId:string;balance:number}>(`/customers/${id}/payment`,{method:"POST",body:JSON.stringify({amount,note,...details})});
   } catch (error) {
     if (!electronOffline() || !isNetworkFailure(error)) throw error;
     const paymentId=crypto.randomUUID();
