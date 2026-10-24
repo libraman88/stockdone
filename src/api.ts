@@ -146,10 +146,13 @@ export async function getCustomers(){try{
     let pending:any[]=[];try{pending=await offlineQuery<any>("SELECT entity,payload,status FROM sync_queue WHERE status IN ('pending','failed') AND entity IN ('customer_payment','customer_cheque','sale')")}catch{}
     const locallyChanged=new Set<string>();
     for(const q of pending)try{const p=JSON.parse(q.payload);if(p.customerId)locallyChanged.add(String(p.customerId));}catch{}
+    const localBalances=new Map<string,number>();
     for(const customer of customers){
       const keepLocalBalance=locallyChanged.has(customer.id);
       await offlineExec("INSERT INTO customers(id,name,phone,address,shop_name,city,previous_balance,balance,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,phone=excluded.phone,address=excluded.address,shop_name=excluded.shop_name,city=excluded.city,previous_balance=excluded.previous_balance,balance=CASE WHEN ? THEN customers.balance ELSE excluded.balance END,updated_at=excluded.updated_at",[customer.id,customer.name,customer.phone??null,customer.address??null,customer.shopName??null,customer.city??null,Number(customer.previousBalance||0),Number(customer.balance||0),new Date().toISOString(),keepLocalBalance?1:0]);
+      if(keepLocalBalance){const local=await offlineQuery<{balance:number}>("SELECT balance FROM customers WHERE id=?",[customer.id]);if(local[0])localBalances.set(customer.id,Number(local[0].balance));}
     }
+    return customers.map(customer=>localBalances.has(customer.id)?{...customer,balance:localBalances.get(customer.id)!}:customer);
   }catch{}
   return customers;
 }catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await ensureOfflineCustomersTable();return offlineQuery<ApiCustomer>(`SELECT id,name,phone,address,shop_name AS "shopName",city,previous_balance AS "previousBalance",balance FROM customers ORDER BY name`);}}
