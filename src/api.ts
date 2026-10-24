@@ -159,7 +159,17 @@ export async function getCustomers(){try{
 export async function removeCustomer(id:string){try{return await apiRequest<{ok:boolean}>(`/customers/${id}`,{method:"DELETE"});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineCustomerRemoval(id);return {ok:true};}}
 export async function createCustomer(input:{name:string;phone?:string;address?:string;shopName?:string;city?:string;previousBalance?:number}){try{return await apiRequest<ApiCustomer>("/customers",{method:"POST",body:JSON.stringify(input)});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const id=crypto.randomUUID();await queueOfflineCustomer({id,...input});return {id,name:input.name,phone:input.phone||null,address:input.address||null,shopName:input.shopName||null,city:input.city||null,previousBalance:Number(input.previousBalance||0),balance:Number(input.previousBalance||0)};}}
 export async function recordCustomerPayment(id:string,amount:number,note?:string,details?:{method?:"cash"|"bank"|"cheque"|"other";chequeNumber?:string;bankName?:string;chequeDate?:string;chequeStatus?:"pending"|"cleared"|"bounced"}){
-  return apiRequest<{customerId:string;balance:number;transactionId?:string}>(`/customers/${id}/payment`,{method:"POST",body:JSON.stringify({amount,note,...details})});
+  const transactionId=crypto.randomUUID();
+  const method=details?.method||"cash";
+  try{
+    return await apiRequest<{customerId:string;balance:number;transactionId?:string}>(`/customers/${id}/payment`,{method:"POST",body:JSON.stringify({amount,note,...details,clientReference:transactionId})});
+  }catch(error){
+    if(!electronOffline()||!isNetworkFailure(error))throw error;
+    await queueOfflineCustomerPayment({id:transactionId,customerId:id,amount,note,method,chequeNumber:details?.chequeNumber,bankName:details?.bankName,chequeDate:details?.chequeDate});
+    const rows=await offlineQuery<{balance:number}>("SELECT balance FROM customers WHERE id=?",[id]);
+    if(!rows[0])throw new Error("Customer is not available offline.");
+    return {customerId:id,balance:Number(rows[0].balance),transactionId};
+  }
 }
 
 export type ApiReturnItem={variantId:string;quantity:number;unitPrice:number};
