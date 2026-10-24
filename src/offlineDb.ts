@@ -265,6 +265,14 @@ export async function queueOfflineCustomer(input:{id:string;name:string;phone?:s
     await offlineDb.exec("COMMIT");
   }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
 }
+export async function archiveCachedCustomer(id:string){
+  if(!(await offlineDb.available()))return;
+  const table=await offlineDb.query<{name:string}>("SELECT name FROM sqlite_master WHERE type='table' AND name='customers'");
+  if(!table.length)return;
+  const cols=await offlineDb.query<{name:string}>("PRAGMA table_info(customers)");
+  if(!cols.some(c=>c.name==="active"))await offlineDb.exec("ALTER TABLE customers ADD COLUMN active INTEGER NOT NULL DEFAULT 1");
+  await offlineDb.exec("UPDATE customers SET active=0,updated_at=? WHERE id=?",[new Date().toISOString(),id]);
+}
 export async function queueOfflineCustomerRemoval(id:string){
   if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
   const s=authStorage.getSession();if(!s?.businessId||!s?.branchId)throw new Error("Offline customer removal requires branch context.");
