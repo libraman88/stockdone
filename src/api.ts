@@ -1,5 +1,5 @@
 import { authStorage } from "./auth";
-import { queueOfflineProduct, queueOfflineMasterMutation, cacheOfflineMasterTypes, cacheOfflineMasterItems, getCachedMasterItems, queueOfflineStockTransfer, queueOfflineTransferReceive, queueOfflineBranch, getCachedStockTransfers, queueOfflineAdminMutation, queueOfflineRawMaterial, queueOfflineFabricLot, queueOfflineCmtJob, queueOfflineCmtJobUpdate, queueOfflineFinishedStock, queueOfflineSale, queueOfflinePurchase, queueOfflineCustomer, queueOfflineSupplier, queueOfflineCustomerPayment, queueOfflineSupplierPayment, queueOfflineInventoryAdjustment, queueOfflineReturn, queueOfflineExchange } from "./offlineDb";
+import { queueOfflineProduct, queueOfflineMasterMutation, queueOfflineCustomerRemoval, cacheOfflineMasterTypes, cacheOfflineMasterItems, getCachedMasterItems, queueOfflineStockTransfer, queueOfflineTransferReceive, queueOfflineBranch, getCachedStockTransfers, queueOfflineAdminMutation, queueOfflineRawMaterial, queueOfflineFabricLot, queueOfflineCmtJob, queueOfflineCmtJobUpdate, queueOfflineFinishedStock, queueOfflineSale, queueOfflinePurchase, queueOfflineCustomer, queueOfflineSupplier, queueOfflineCustomerPayment, queueOfflineSupplierPayment, queueOfflineInventoryAdjustment, queueOfflineReturn, queueOfflineExchange } from "./offlineDb";
 import type { Product } from "./types";
 
 const configuredApiUrl = String(import.meta.env.VITE_API_URL || "").trim().replace(/\/$/, "");
@@ -138,14 +138,14 @@ export async function createPurchase(input: { invoiceNo: string; supplierId?: st
 }
 
 export type ApiCustomer = { id:string; name:string; phone?:string|null; address?:string|null; shopName?:string|null; city?:string|null; previousBalance?:number; balance:number };
-async function ensureOfflineCustomersTable(){await offlineExec("CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,address TEXT,shop_name TEXT,city TEXT,previous_balance REAL NOT NULL DEFAULT 0,balance REAL NOT NULL DEFAULT 0,updated_at TEXT NOT NULL)");for(const sql of ["ALTER TABLE customers ADD COLUMN address TEXT","ALTER TABLE customers ADD COLUMN shop_name TEXT","ALTER TABLE customers ADD COLUMN city TEXT","ALTER TABLE customers ADD COLUMN previous_balance REAL NOT NULL DEFAULT 0"])try{await offlineExec(sql)}catch{}}
+async function ensureOfflineCustomersTable(){await offlineExec("CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,address TEXT,shop_name TEXT,city TEXT,previous_balance REAL NOT NULL DEFAULT 0,balance REAL NOT NULL DEFAULT 0,active INTEGER NOT NULL DEFAULT 1,updated_at TEXT NOT NULL)");for(const sql of ["ALTER TABLE customers ADD COLUMN address TEXT","ALTER TABLE customers ADD COLUMN shop_name TEXT","ALTER TABLE customers ADD COLUMN city TEXT","ALTER TABLE customers ADD COLUMN previous_balance REAL NOT NULL DEFAULT 0","ALTER TABLE customers ADD COLUMN active INTEGER NOT NULL DEFAULT 1"])try{await offlineExec(sql)}catch{}}
 export async function getCustomers(){try{
   const customers=await apiRequest<ApiCustomer[]>("/customers");
   if(electronOffline())try{
     await ensureOfflineCustomersTable();
-    let pending:any[]=[];try{pending=await offlineQuery<any>("SELECT entity,payload,status FROM sync_queue WHERE status IN ('pending','failed') AND entity IN ('customer_payment','customer_cheque','sale')")}catch{}
+    let pending:any[]=[];try{pending=await offlineQuery<any>("SELECT entity,payload,status FROM sync_queue WHERE status IN ('pending','failed') AND entity IN ('customer_payment','customer_cheque','sale','return','exchange','customer')")}catch{}
     const locallyChanged=new Set<string>();
-    for(const q of pending)try{const p=JSON.parse(q.payload);if(p.customerId)locallyChanged.add(String(p.customerId));}catch{}
+    for(const q of pending)try{const p=JSON.parse(q.payload);if(p.customerId)locallyChanged.add(String(p.customerId));if(q.entity==="customer"&&q.status!=="synced"&&p.id)locallyChanged.add(String(p.id));}catch{}
     const localBalances=new Map<string,number>();
     for(const customer of customers){
       const keepLocalBalance=locallyChanged.has(customer.id);
@@ -155,8 +155,8 @@ export async function getCustomers(){try{
     return customers.map(customer=>localBalances.has(customer.id)?{...customer,balance:localBalances.get(customer.id)!}:customer);
   }catch{}
   return customers;
-}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await ensureOfflineCustomersTable();return offlineQuery<ApiCustomer>(`SELECT id,name,phone,address,shop_name AS "shopName",city,previous_balance AS "previousBalance",balance FROM customers ORDER BY name`);}}
-export async function removeCustomer(id:string){return apiRequest<{ok:boolean}>(`/customers/${id}`,{method:"DELETE"});}
+}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await ensureOfflineCustomersTable();return offlineQuery<ApiCustomer>(`SELECT id,name,phone,address,shop_name AS "shopName",city,previous_balance AS "previousBalance",balance FROM customers WHERE COALESCE(active,1)=1 ORDER BY name`);}}
+export async function removeCustomer(id:string){try{return await apiRequest<{ok:boolean}>(`/customers/${id}`,{method:"DELETE"});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await queueOfflineCustomerRemoval(id);return {ok:true};}}
 export async function createCustomer(input:{name:string;phone?:string;address?:string;shopName?:string;city?:string;previousBalance?:number}){try{return await apiRequest<ApiCustomer>("/customers",{method:"POST",body:JSON.stringify(input)});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const id=crypto.randomUUID();await queueOfflineCustomer({id,...input});return {id,name:input.name,phone:input.phone||null,address:input.address||null,shopName:input.shopName||null,city:input.city||null,previousBalance:Number(input.previousBalance||0),balance:Number(input.previousBalance||0)};}}
 export async function recordCustomerPayment(id:string,amount:number,note?:string,details?:{method?:"cash"|"bank"|"cheque"|"other";chequeNumber?:string;bankName?:string;chequeDate?:string;chequeStatus?:"pending"|"cleared"|"bounced"}){
   return apiRequest<{customerId:string;balance:number;transactionId?:string}>(`/customers/${id}/payment`,{method:"POST",body:JSON.stringify({amount,note,...details})});
@@ -179,9 +179,9 @@ export async function createReturn(input:{saleId:string;type:"return"|"exchange"
     }
     const returned=input.items.map(i=>({id:crypto.randomUUID(),productId:i.variantId,qty:i.quantity}));
     const replacement=(input.exchangeItems||[]).map(i=>({id:crypto.randomUUID(),productId:i.variantId,qty:i.quantity,price:i.unitPrice,unitCost:costs.get(i.variantId)||0}));
-    const priceDifference=Math.max(0,replacement.reduce((s,i)=>s+i.price*i.qty,0)-input.items.reduce((s,i)=>s+i.unitPrice*i.quantity,0));
+    const priceDifference=replacement.reduce((s,i)=>s+i.price*i.qty,0)-input.items.reduce((s,i)=>s+i.unitPrice*i.quantity,0);
     await queueOfflineExchange({id,saleId:input.saleId,returned,replacement,difference:priceDifference});
-    return {id,type:"exchange",refundAmount:Number(input.refundAmount||0),priceDifference};
+    return {id,type:"exchange",refundAmount:Number(input.refundAmount||0),priceDifference:Math.max(0,priceDifference)};
   }
 }
 export async function getSales(){try{return await apiRequest<any[]>("/sales");}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const rows=await offlineQuery<any>("SELECT id,invoice_no,client_reference,total,payment_method,discount,customer_id,status,created_at FROM sales ORDER BY created_at DESC");const items=await offlineQuery<any>("SELECT si.sale_id,si.product_id,si.qty,si.price,p.name,p.sku,p.size,p.color FROM sale_items si LEFT JOIN products p ON p.id=si.product_id ORDER BY si.id");return rows.map((s:any)=>({id:s.id,invoiceNo:s.invoice_no,total:Number(s.total),paymentMethod:s.payment_method,discount:Number(s.discount),customerId:s.customer_id,createdAt:s.created_at,status:s.status,items:items.filter((i:any)=>i.sale_id===s.id).map((i:any)=>({id:i.product_id,productId:i.product_id,variantId:i.product_id,qty:Number(i.qty),price:Number(i.price),name:i.name,sku:i.sku,size:i.size,color:i.color}))}));}}
@@ -425,7 +425,7 @@ export async function getCustomerTransactions(customerId:string){try{
   try{
     await ensureOfflineCustomerTransactionsTable();
     for(const tx of rows)await offlineExec("INSERT INTO customer_transactions(id,customer_id,type,amount,note,created_at,payment_method,cheque_number,bank_name,cheque_date,cheque_status,reference_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET type=excluded.type,amount=excluded.amount,note=excluded.note,created_at=excluded.created_at,payment_method=excluded.payment_method,cheque_number=excluded.cheque_number,bank_name=excluded.bank_name,cheque_date=excluded.cheque_date,cheque_status=excluded.cheque_status,reference_id=excluded.reference_id WHERE NOT EXISTS (SELECT 1 FROM sync_queue WHERE ((entity IN ('customer_payment','customer_cheque') AND entity_id=excluded.id) OR (entity='sale' AND entity_id=excluded.reference_id AND excluded.type='credit_sale')) AND status IN ('pending','failed'))",[tx.id,tx.customer_id,tx.type,tx.amount,tx.note,tx.created_at,tx.payment_method??null,tx.cheque_number??null,tx.bank_name??null,tx.cheque_date??null,tx.cheque_status??null,tx.reference_id??null]);
-    const pending=await offlineQuery<CustomerTransactionRow>("SELECT ct.* FROM customer_transactions ct JOIN sync_queue q ON ((q.entity IN ('customer_payment','customer_cheque') AND q.entity_id=ct.id) OR (q.entity='sale' AND q.entity_id=ct.reference_id AND ct.type='credit_sale')) AND q.status IN ('pending','failed') WHERE ct.customer_id=? ORDER BY ct.created_at DESC",[customerId]);
+    const pending=await offlineQuery<CustomerTransactionRow>("SELECT ct.* FROM customer_transactions ct JOIN sync_queue q ON ((q.entity IN ('customer_payment','customer_cheque') AND q.entity_id=ct.id) OR (q.entity='sale' AND q.entity_id=ct.reference_id AND ct.type='credit_sale') OR (q.entity IN ('return','exchange') AND q.entity_id=ct.reference_id)) AND q.status IN ('pending','failed') WHERE ct.customer_id=? ORDER BY ct.created_at DESC",[customerId]);
     const byId=new Map(rows.map(tx=>[tx.id,tx]));for(const tx of pending)byId.set(tx.id,tx);
     return [...byId.values()].sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
   }catch{return rows;}
