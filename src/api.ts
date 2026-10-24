@@ -156,6 +156,7 @@ export async function getCustomers(){try{
   }catch{}
   return customers;
 }catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;await ensureOfflineCustomersTable();return offlineQuery<ApiCustomer>(`SELECT id,name,phone,address,shop_name AS "shopName",city,previous_balance AS "previousBalance",balance FROM customers ORDER BY name`);}}
+export async function removeCustomer(id:string){return apiRequest<{ok:boolean}>(`/customers/${id}`,{method:"DELETE"});}
 export async function createCustomer(input:{name:string;phone?:string;address?:string;shopName?:string;city?:string;previousBalance?:number}){try{return await apiRequest<ApiCustomer>("/customers",{method:"POST",body:JSON.stringify(input)});}catch(error){if(!electronOffline()||!isNetworkFailure(error))throw error;const id=crypto.randomUUID();await queueOfflineCustomer({id,...input});return {id,name:input.name,phone:input.phone||null,address:input.address||null,shopName:input.shopName||null,city:input.city||null,previousBalance:Number(input.previousBalance||0),balance:Number(input.previousBalance||0)};}}
 export async function recordCustomerPayment(id:string,amount:number,note?:string,details?:{method?:"cash"|"bank"|"cheque"|"other";chequeNumber?:string;bankName?:string;chequeDate?:string;chequeStatus?:"pending"|"cleared"|"bounced"}){
   return apiRequest<{customerId:string;balance:number;transactionId?:string}>(`/customers/${id}/payment`,{method:"POST",body:JSON.stringify({amount,note,...details})});
