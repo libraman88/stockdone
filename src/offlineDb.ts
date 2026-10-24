@@ -144,7 +144,13 @@ export async function queueOfflineExchange(x:{id:string;saleId:string;returned:{
       await offlineDb.exec("INSERT INTO return_items(id,return_id,variant_id,quantity,direction,unit_price,unit_cost,created_at) VALUES(?,?,?,?,?,?,?,?)",[i.id,x.id,i.productId,i.qty,"out",i.price,i.unitCost,now]);
       await offlineDb.exec("INSERT INTO stock_movements(id,product_id,type,quantity,reason,reference_id,created_at) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),i.productId,"exchange_sale",-i.qty,"offline_exchange",x.id,now]);
     }
-    await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"exchange",x.id,"create",JSON.stringify({...x,businessId:s.businessId,branchId:s.branchId}),now,"pending"]);
+    const sale=await offlineDb.query<{customer_id:string|null;payment_method:string}>("SELECT customer_id,payment_method FROM sales WHERE id=?",[x.saleId]);
+    const customerId=x.customerId||((sale[0]?.payment_method==="other")?sale[0]?.customer_id:null);
+    if(customerId&&x.difference!==0){
+      await offlineDb.exec("UPDATE customers SET balance=balance+?,updated_at=? WHERE id=?",[x.difference,now,customerId]);
+      await offlineDb.exec("INSERT INTO customer_transactions(id,customer_id,type,amount,note,created_at,reference_id) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),customerId,x.difference>0?"credit_sale":"payment",Math.abs(x.difference),"Offline Khata exchange adjustment",now,x.id]);
+    }
+    await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"exchange",x.id,"create",JSON.stringify({...x,customerId,businessId:s.businessId,branchId:s.branchId}),now,"pending"]);
     await offlineDb.exec("COMMIT");
   }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
 }
@@ -179,7 +185,13 @@ export async function queueOfflineReturn(ret:{id:string;saleId:string;items:{id:
       await offlineDb.exec("INSERT INTO return_items(id,return_id,variant_id,quantity,direction,unit_price,unit_cost,created_at) VALUES(?,?,?,?,?,?,?,?)",[i.id,ret.id,i.productId,i.qty,"in",i.qty?i.refund/i.qty:0,i.unitCost,now]);
       await offlineDb.exec("INSERT INTO stock_movements(id,product_id,type,quantity,reason,reference_id,created_at) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),i.productId,"return",i.qty,"offline_return",ret.id,now]);
     }
-    await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"return",ret.id,"create",JSON.stringify({...ret,businessId:s.businessId,branchId:s.branchId}),now,"pending"]);
+    const sale=await offlineDb.query<{customer_id:string|null;payment_method:string}>("SELECT customer_id,payment_method FROM sales WHERE id=?",[ret.saleId]);
+    const customerId=ret.customerId||((sale[0]?.payment_method==="other")?sale[0]?.customer_id:null);
+    if(customerId&&ret.refund>0){
+      await offlineDb.exec("UPDATE customers SET balance=balance-?,updated_at=? WHERE id=?",[ret.refund,now,customerId]);
+      await offlineDb.exec("INSERT INTO customer_transactions(id,customer_id,type,amount,note,created_at,reference_id) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),customerId,"payment",ret.refund,"Offline Khata customer return",now,ret.id]);
+    }
+    await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"return",ret.id,"create",JSON.stringify({...ret,customerId,businessId:s.businessId,branchId:s.branchId}),now,"pending"]);
     await offlineDb.exec("COMMIT");
   }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
 }
@@ -243,17 +255,32 @@ export async function queueOfflineCustomer(input:{id:string;name:string;phone?:s
   const session=authStorage.getSession(); if(!session?.businessId||!session?.branchId)throw new Error("Offline customer requires branch context.");
   const now=new Date().toISOString(); await offlineDb.exec("BEGIN");
   try{
-    await offlineDb.exec("CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,address TEXT,shop_name TEXT,city TEXT,previous_balance REAL NOT NULL DEFAULT 0,balance REAL NOT NULL DEFAULT 0,updated_at TEXT NOT NULL)");
-    try{await offlineDb.exec("ALTER TABLE customers ADD COLUMN shop_name TEXT")}catch{}
-    try{await offlineDb.exec("ALTER TABLE customers ADD COLUMN city TEXT")}catch{}
-    try{await offlineDb.exec("ALTER TABLE customers ADD COLUMN previous_balance REAL NOT NULL DEFAULT 0")}catch{}
+    await offlineDb.exec("CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT,address TEXT,shop_name TEXT,city TEXT,previous_balance REAL NOT NULL DEFAULT 0,balance REAL NOT NULL DEFAULT 0,active INTEGER NOT NULL DEFAULT 1,updated_at TEXT NOT NULL)");
+    for(const sql of ["ALTER TABLE customers ADD COLUMN shop_name TEXT","ALTER TABLE customers ADD COLUMN city TEXT","ALTER TABLE customers ADD COLUMN previous_balance REAL NOT NULL DEFAULT 0","ALTER TABLE customers ADD COLUMN active INTEGER NOT NULL DEFAULT 1"])try{await offlineDb.exec(sql)}catch{}
     const opening=Number(input.previousBalance||0);
-    await offlineDb.exec("INSERT INTO customers(id,name,phone,address,shop_name,city,previous_balance,balance,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,phone=excluded.phone,address=excluded.address,shop_name=excluded.shop_name,city=excluded.city,previous_balance=excluded.previous_balance,updated_at=excluded.updated_at",[input.id,input.name,input.phone??null,input.address??null,input.shopName??null,input.city??null,opening,opening,now]);
+    await offlineDb.exec("INSERT INTO customers(id,name,phone,address,shop_name,city,previous_balance,balance,active,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,phone=excluded.phone,address=excluded.address,shop_name=excluded.shop_name,city=excluded.city,previous_balance=excluded.previous_balance,updated_at=excluded.updated_at",[input.id,input.name,input.phone??null,input.address??null,input.shopName??null,input.city??null,opening,opening,1,now]);
+    await ensureOfflineCustomerTransactionSchema();
+    if(opening!==0)await offlineDb.exec("INSERT INTO customer_transactions(id,customer_id,type,amount,note,created_at,reference_id) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),input.id,opening>0?"credit_adjustment":"debit_adjustment",Math.abs(opening),"Opening/previous balance",now,input.id]);
     await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"customer",input.id,"create",JSON.stringify({...input,businessId:session.businessId,branchId:session.branchId}),now,"pending"]);
     await offlineDb.exec("COMMIT");
   }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
 }
-export async function queueOfflineSupplier(input:{id:string;name:string;phone?:string;address?:string}) {
+export async function queueOfflineCustomerRemoval(id:string){
+  if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
+  const s=authStorage.getSession();if(!s?.businessId||!s?.branchId)throw new Error("Offline customer removal requires branch context.");
+  const now=new Date().toISOString();
+  await offlineDb.exec("BEGIN");
+  try{
+    for(const sql of ["ALTER TABLE customers ADD COLUMN active INTEGER NOT NULL DEFAULT 1"])try{await offlineDb.exec(sql)}catch{}
+    const rows=await offlineDb.query<{id:string;name:string;active:number}>("SELECT id,name,COALESCE(active,1) AS active FROM customers WHERE id=?",[id]);
+    if(!rows[0])throw new Error("Customer is not available in offline cache.");
+    if(!rows[0].active)throw new Error("Customer is already removed.");
+    await offlineDb.exec("UPDATE customers SET active=0,updated_at=? WHERE id=?",[now,id]);
+    await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"customer",id,"delete",JSON.stringify({id,name:rows[0].name,businessId:s.businessId,branchId:s.branchId}),now,"pending"]);
+    await offlineDb.exec("COMMIT");
+  }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
+}
+export async function queueOfflineSupplier(input:{id:string;name:string;phone?:string;address?:string})
   if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
   const session=authStorage.getSession(); if(!session?.businessId||!session?.branchId)throw new Error("Offline supplier requires branch context.");
   const now=new Date().toISOString(); await offlineDb.exec("BEGIN");
@@ -352,6 +379,19 @@ export async function syncPendingCustomers(){
     await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
   }catch(e){
     const message=e instanceof Error?e.message:"Customer sync failed",status=e instanceof ApiError?e.status:0;
+    const permanent=status>=400&&status<500&&status!==401&&status!==408&&status!==429;
+    await offlineDb.exec("UPDATE sync_queue SET status=?,attempts=attempts+1,last_error=? WHERE id=?",[permanent?"failed":"pending",message,row.id]);failed++;
+  }
+  const removals=await offlineDb.query<{id:string;entity_id:string;payload:string}>("SELECT id,entity_id,payload FROM sync_queue WHERE entity='customer' AND operation='delete' AND status='pending' ORDER BY created_at");
+  for(const row of removals)try{
+    const p=JSON.parse(row.payload),s=authStorage.getSession();
+    if(!s?.businessId||!s?.branchId||p.businessId!==s.businessId||p.branchId!==s.branchId)continue;
+    const creation=await offlineDb.query<{status:string}>("SELECT status FROM sync_queue WHERE entity='customer' AND entity_id=? AND operation='create' ORDER BY created_at DESC LIMIT 1",[row.entity_id]);
+    if(creation[0]&&creation[0].status!=="synced")continue;
+    await apiRequest("/customers/"+row.entity_id,{method:"DELETE"});
+    await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
+  }catch(e){
+    const message=e instanceof Error?e.message:"Customer removal sync failed",status=e instanceof ApiError?e.status:0;
     const permanent=status>=400&&status<500&&status!==401&&status!==408&&status!==429;
     await offlineDb.exec("UPDATE sync_queue SET status=?,attempts=attempts+1,last_error=? WHERE id=?",[permanent?"failed":"pending",message,row.id]);failed++;
   }
