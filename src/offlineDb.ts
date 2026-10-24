@@ -154,6 +154,17 @@ export async function queueOfflineExchange(x:{id:string;saleId:string;returned:{
     await offlineDb.exec("COMMIT");
   }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
 }
+async function reconcileCachedKhataBalance(customerId:string|undefined|null){
+  if(!customerId||!(await offlineDb.available()))return;
+  try{
+    const customers=await apiRequest<any[]>("/customers");
+    const remote=customers.find(x=>String(x.id)===String(customerId));
+    if(!remote||!Number.isFinite(Number(remote.balance)))return;
+    const table=await offlineDb.query<{name:string}>("SELECT name FROM sqlite_master WHERE type='table' AND name='customers'");
+    if(!table.length)return;
+    await offlineDb.exec("UPDATE customers SET balance=?,updated_at=? WHERE id=?",[Number(remote.balance),new Date().toISOString(),customerId]);
+  }catch{}
+}
 export async function syncPendingExchanges() {
   if(!isOnline()||!(await offlineDb.available()))return{synced:0,failed:0};
   const rows=await offlineDb.query<{id:string;payload:string}>("SELECT id,payload FROM sync_queue WHERE entity='exchange' AND operation='create' AND status='pending' ORDER BY created_at");
@@ -162,7 +173,7 @@ export async function syncPendingExchanges() {
     const x=JSON.parse(row.payload),s=authStorage.getSession();
     if(!s?.businessId||!s?.branchId||x.businessId!==s.businessId||x.branchId!==s.branchId)continue;
     await apiRequest("/returns",{method:"POST",body:JSON.stringify({saleId:x.saleId,type:"exchange",clientReference:x.id,refundAmount:0,items:x.returned.map((i:any)=>({variantId:i.productId,quantity:i.qty,unitPrice:0})),exchangeItems:x.replacement.map((i:any)=>({variantId:i.productId,quantity:i.qty,unitPrice:i.price}))})});
-    await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
+    await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;await reconcileCachedKhataBalance(x.customerId);
   }catch(e){
     const message=e instanceof Error?e.message:"Exchange sync failed",status=e instanceof ApiError?e.status:0;
     const permanent=status>=400&&status<500&&status!==401&&status!==408&&status!==429;
@@ -203,7 +214,7 @@ export async function syncPendingReturns() {
     const r=JSON.parse(row.payload),s=authStorage.getSession();
     if(!s?.businessId||!s?.branchId||r.businessId!==s.businessId||r.branchId!==s.branchId)continue;
     await apiRequest("/returns",{method:"POST",body:JSON.stringify({saleId:r.saleId,type:"return",clientReference:r.id,refundAmount:r.refund,items:r.items.map((i:any)=>({variantId:i.productId,quantity:i.qty,unitPrice:i.refund/i.qty})),exchangeItems:[]})});
-    await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
+    await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;await reconcileCachedKhataBalance(r.customerId);
   }catch(e){
     const message=e instanceof Error?e.message:"Return sync failed",status=e instanceof ApiError?e.status:0;
     const permanent=status>=400&&status<500&&status!==401&&status!==408&&status!==429;
