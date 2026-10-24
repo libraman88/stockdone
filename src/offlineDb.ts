@@ -432,8 +432,17 @@ export async function syncPendingSales() {
       const sale=JSON.parse(row.payload);
       const session=authStorage.getSession();
       if(!session?.businessId||!session?.branchId||sale.businessId!==session.businessId||sale.branchId!==session.branchId)continue;
-      await apiRequest("/sales",{method:"POST",body:JSON.stringify({invoiceNo:sale.invoiceNo,clientReference:sale.id,paymentMethod:sale.paymentMethod,discount:sale.discount,customerId:sale.customerId||undefined,received:sale.received,change:sale.change,items:sale.items.map((i:any)=>({variantId:i.productId,qty:i.qty,price:i.price}))})});
+      const syncedSale=await apiRequest<{id:string}>("/sales",{method:"POST",body:JSON.stringify({invoiceNo:sale.invoiceNo,clientReference:sale.id,paymentMethod:sale.paymentMethod,discount:sale.discount,customerId:sale.customerId||undefined,received:sale.received,change:sale.change,items:sale.items.map((i:any)=>({variantId:i.productId,qty:i.qty,price:i.price}))})});
       await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
+       if(sale.customerId&&sale.paymentMethod==="other")try{
+         const remote=await apiRequest<any[]>(`/customers/${sale.customerId}/transactions`);
+         const tx=remote.find(t=>t.type==="credit_sale"&&String(t.reference_id||"")===String(syncedSale.id));
+         await ensureOfflineCustomerTransactionSchema();
+         if(tx){
+           await offlineDb.exec("INSERT INTO customer_transactions(id,customer_id,type,amount,note,created_at,payment_method,cheque_number,bank_name,cheque_date,cheque_status,reference_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET type=excluded.type,amount=excluded.amount,note=excluded.note,created_at=excluded.created_at,reference_id=excluded.reference_id",[tx.id,tx.customer_id,tx.type,tx.amount,tx.note,tx.created_at,tx.payment_method??null,tx.cheque_number??null,tx.bank_name??null,tx.cheque_date??null,tx.cheque_status??null,tx.reference_id??null]);
+           await offlineDb.exec("DELETE FROM customer_transactions WHERE customer_id=? AND type='credit_sale' AND reference_id=? AND id<>?",[sale.customerId,sale.id,tx.id]);
+         }
+       }catch{}
     }catch(e){
       const message=e instanceof Error?e.message:"Sync failed";
       const status=e instanceof ApiError?e.status:0;
