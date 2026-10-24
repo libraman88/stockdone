@@ -441,7 +441,7 @@ export async function syncPendingCustomerPayments() {
     const p=JSON.parse(row.payload),s=authStorage.getSession();
     if(!s?.businessId||!s?.branchId||p.businessId!==s.businessId||p.branchId!==s.branchId)continue;
     await apiRequest(`/customers/${p.customerId}/payment`,{method:"POST",body:JSON.stringify({amount:p.amount,note:p.note||"Offline customer payment",method:p.method||"cash",chequeNumber:p.chequeNumber,bankName:p.bankName,chequeDate:p.chequeDate,clientReference:p.id})});
-    await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
+    await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;await reconcileCachedKhataBalance(p.customerId);
   }catch(e){
     const message=e instanceof Error?e.message:"Customer payment sync failed",status=e instanceof ApiError?e.status:0;
     const permanent=status>=400&&status<500&&status!==401&&status!==408&&status!==429;
@@ -454,7 +454,7 @@ export async function syncPendingCustomerPayments() {
     const payment=await offlineDb.query<{status:string}>("SELECT status FROM sync_queue WHERE entity='customer_payment' AND entity_id=? ORDER BY created_at DESC LIMIT 1",[p.id]);
     if(!payment[0]||payment[0].status!=="synced")continue;
     await apiRequest(`/customers/${p.customerId}/transactions/${p.id}/cheque`,{method:"PUT",body:JSON.stringify({status:p.status})});
-    await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
+    await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;await reconcileCachedKhataBalance(p.customerId);
   }catch(e){
     const message=e instanceof Error?e.message:"Customer cheque sync failed",status=e instanceof ApiError?e.status:0;
     const permanent=status>=400&&status<500&&status!==401&&status!==408&&status!==429;
