@@ -280,7 +280,7 @@ export async function queueOfflineCustomerRemoval(id:string){
     await offlineDb.exec("COMMIT");
   }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
 }
-export async function queueOfflineSupplier(input:{id:string;name:string;phone?:string;address?:string})
+export async function queueOfflineSupplier(input:{id:string;name:string;phone?:string;address?:string}) {
   if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
   const session=authStorage.getSession(); if(!session?.businessId||!session?.branchId)throw new Error("Offline supplier requires branch context.");
   const now=new Date().toISOString(); await offlineDb.exec("BEGIN");
