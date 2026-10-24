@@ -145,7 +145,7 @@ export async function queueOfflineExchange(x:{id:string;saleId:string;returned:{
       await offlineDb.exec("INSERT INTO stock_movements(id,product_id,type,quantity,reason,reference_id,created_at) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),i.productId,"exchange_sale",-i.qty,"offline_exchange",x.id,now]);
     }
     const sale=await offlineDb.query<{customer_id:string|null;payment_method:string}>("SELECT customer_id,payment_method FROM sales WHERE id=?",[x.saleId]);
-    const customerId=x.customerId||((sale[0]?.payment_method==="other")?sale[0]?.customer_id:null);
+    const customerId=sale[0]?.payment_method==="other"?sale[0]?.customer_id:null;
     if(customerId&&x.difference!==0){
       await offlineDb.exec("UPDATE customers SET balance=balance+?,updated_at=? WHERE id=?",[x.difference,now,customerId]);
       await offlineDb.exec("INSERT INTO customer_transactions(id,customer_id,type,amount,note,created_at,reference_id) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),customerId,x.difference>0?"credit_sale":"payment",Math.abs(x.difference),"Offline Khata exchange adjustment",now,x.id]);
@@ -186,7 +186,7 @@ export async function queueOfflineReturn(ret:{id:string;saleId:string;items:{id:
       await offlineDb.exec("INSERT INTO stock_movements(id,product_id,type,quantity,reason,reference_id,created_at) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),i.productId,"return",i.qty,"offline_return",ret.id,now]);
     }
     const sale=await offlineDb.query<{customer_id:string|null;payment_method:string}>("SELECT customer_id,payment_method FROM sales WHERE id=?",[ret.saleId]);
-    const customerId=ret.customerId||((sale[0]?.payment_method==="other")?sale[0]?.customer_id:null);
+    const customerId=sale[0]?.payment_method==="other"?sale[0]?.customer_id:null;
     if(customerId&&ret.refund>0){
       await offlineDb.exec("UPDATE customers SET balance=balance-?,updated_at=? WHERE id=?",[ret.refund,now,customerId]);
       await offlineDb.exec("INSERT INTO customer_transactions(id,customer_id,type,amount,note,created_at,reference_id) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),customerId,"payment",ret.refund,"Offline Khata customer return",now,ret.id]);
