@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS app_meta (
 CREATE TABLE IF NOT EXISTS products (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  sku TEXT NOT NULL UNIQUE,
+  sku TEXT,
   category TEXT,
   size TEXT,
   color TEXT,
@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS sync_conflicts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sqlite_products_barcode ON products(barcode);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sqlite_products_active_sku ON products(sku) WHERE active=1 AND sku IS NOT NULL AND trim(sku) <> '';
 CREATE INDEX IF NOT EXISTS idx_sqlite_products_updated ON products(updated_at);
 CREATE INDEX IF NOT EXISTS idx_sqlite_stock_product_date ON stock_movements(product_id,created_at);
 CREATE INDEX IF NOT EXISTS idx_sqlite_sync_status ON sync_queue(status);
