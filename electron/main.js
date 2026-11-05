@@ -7,7 +7,7 @@ let mainWindow = null;
 
 const OFFLINE_SCHEMA = [
   "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
-  "CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, name TEXT NOT NULL, sku TEXT NOT NULL UNIQUE, category TEXT, category_id TEXT, brand TEXT, sub_category TEXT, floor TEXT, warehouse TEXT, size TEXT, color TEXT, barcode TEXT UNIQUE, cost REAL NOT NULL DEFAULT 0, price REAL NOT NULL DEFAULT 0, qty INTEGER NOT NULL DEFAULT 0, reorder_level INTEGER NOT NULL DEFAULT 5, active INTEGER NOT NULL DEFAULT 1, master_values TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, name TEXT NOT NULL, sku TEXT, category TEXT, category_id TEXT, brand TEXT, sub_category TEXT, floor TEXT, warehouse TEXT, size TEXT, color TEXT, barcode TEXT UNIQUE, cost REAL NOT NULL DEFAULT 0, price REAL NOT NULL DEFAULT 0, qty INTEGER NOT NULL DEFAULT 0, reorder_level INTEGER NOT NULL DEFAULT 5, active INTEGER NOT NULL DEFAULT 1, master_values TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS sales (id TEXT PRIMARY KEY, invoice_no TEXT NOT NULL UNIQUE, client_reference TEXT UNIQUE, total REAL NOT NULL, payment_method TEXT NOT NULL, discount REAL NOT NULL DEFAULT 0, customer_id TEXT, status TEXT NOT NULL DEFAULT 'completed', created_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS sale_items (id TEXT PRIMARY KEY, sale_id TEXT NOT NULL REFERENCES sales(id), product_id TEXT NOT NULL REFERENCES products(id), qty INTEGER NOT NULL, price REAL NOT NULL, unit_cost REAL NOT NULL DEFAULT 0)",
   "CREATE TABLE IF NOT EXISTS stock_movements (id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id), type TEXT NOT NULL, quantity INTEGER NOT NULL, reason TEXT, reference_id TEXT, created_at TEXT NOT NULL)",
@@ -36,6 +36,37 @@ const OFFLINE_SCHEMA = [
   "CREATE INDEX IF NOT EXISTS idx_sqlite_sync_entity ON sync_queue(entity,entity_id)"
 ];
 
+function migrateProductSkuIndex() {
+  const info = db.prepare("PRAGMA table_info(products)").all();
+  const skuColumn = info.find((column) => column.name === "sku");
+  const uniqueSku = db.prepare("PRAGMA index_list(products)").all().some((index) => {
+    if (!index.unique) return false;
+    return db.prepare("PRAGMA index_info(" + JSON.stringify(index.name) + ")").all().some((column) => column.name === "sku");
+  });
+  if (skuColumn && (skuColumn.notnull || uniqueSku)) {
+    db.pragma("wal_checkpoint(FULL)");
+    const backupDir = path.join(app.getPath("userData"), "backups");
+    fs.mkdirSync(backupDir, { recursive: true });
+    fs.copyFileSync(db.name, path.join(backupDir, `stockdone-before-sku-migration-${Date.now()}.sqlite`));
+    db.pragma("foreign_keys = OFF");
+    try {
+      db.transaction(() => {
+        db.prepare("CREATE TABLE products_sku_migration (id TEXT PRIMARY KEY, name TEXT NOT NULL, sku TEXT, category TEXT, category_id TEXT, brand TEXT, sub_category TEXT, floor TEXT, warehouse TEXT, size TEXT, color TEXT, barcode TEXT UNIQUE, cost REAL NOT NULL DEFAULT 0, price REAL NOT NULL DEFAULT 0, qty INTEGER NOT NULL DEFAULT 0, reorder_level INTEGER NOT NULL DEFAULT 5, active INTEGER NOT NULL DEFAULT 1, master_values TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL)").run();
+        db.prepare("INSERT INTO products_sku_migration SELECT id,name,sku,category,category_id,brand,sub_category,floor,warehouse,size,color,barcode,cost,price,qty,reorder_level,active,master_values,updated_at FROM products").run();
+        db.prepare("DROP TABLE products").run();
+        db.prepare("ALTER TABLE products_sku_migration RENAME TO products").run();
+        db.prepare("CREATE INDEX IF NOT EXISTS idx_sqlite_products_barcode ON products(barcode)").run();
+        db.prepare("CREATE INDEX IF NOT EXISTS idx_sqlite_products_updated ON products(updated_at)").run();
+        db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_sqlite_products_active_sku ON products(sku) WHERE active=1 AND sku IS NOT NULL AND trim(sku) <> ''").run();
+      })();
+    } finally {
+      db.pragma("foreign_keys = ON");
+    }
+  } else {
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_sqlite_products_active_sku ON products(sku) WHERE active=1 AND sku IS NOT NULL AND trim(sku) <> ''").run();
+  }
+}
+
 function loadSqlite() {
   try {
     const Database = require("better-sqlite3");
@@ -45,6 +76,7 @@ function loadSqlite() {
     db.pragma("journal_mode = WAL");
     db.pragma("foreign_keys = ON");
     db.transaction(() => { OFFLINE_SCHEMA.forEach((sql) => db.prepare(sql).run()); const cols = db.prepare("PRAGMA table_info(products)").all(); const names = new Set(cols.map(c => c.name)); for (const [name,type] of [["category_id","TEXT"],["brand","TEXT"],["sub_category","TEXT"],["floor","TEXT"],["warehouse","TEXT"],["active","INTEGER NOT NULL DEFAULT 1"],["master_values","TEXT NOT NULL DEFAULT '{}'"]]) { if (!names.has(name)) db.prepare(`ALTER TABLE products ADD COLUMN ${name} ${type}`).run(); } })();
+    migrateProductSkuIndex();
     return db;
   } catch (error) {
     console.warn("SQLite unavailable; app can continue in browser/API mode.", error.message);
