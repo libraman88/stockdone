@@ -445,6 +445,10 @@ app.get("/api/audit-logs",authenticate,requirePermission("reports"),async(req:an
 
 const port=Number(process.env.PORT||4000);
 void (async()=>{try{
+await pool.query("ALTER TABLE products ALTER COLUMN sku DROP NOT NULL");
+await pool.query("ALTER TABLE products DROP CONSTRAINT IF EXISTS products_business_id_sku_key");
+await pool.query("DROP INDEX IF EXISTS idx_products_sku");
+await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS idx_products_active_sku ON products(business_id,sku) WHERE active=true AND sku IS NOT NULL AND btrim(sku)<>''");
 await pool.query("ALTER TABLE customers ADD COLUMN IF NOT EXISTS shop_name TEXT, ADD COLUMN IF NOT EXISTS city TEXT, ADD COLUMN IF NOT EXISTS previous_balance NUMERIC(12,2) NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT true");
 await pool.query("ALTER TABLE customer_transactions ADD COLUMN IF NOT EXISTS payment_method TEXT, ADD COLUMN IF NOT EXISTS cheque_number TEXT, ADD COLUMN IF NOT EXISTS bank_name TEXT, ADD COLUMN IF NOT EXISTS cheque_date DATE, ADD COLUMN IF NOT EXISTS cheque_status TEXT");
 await pool.query("ALTER TABLE customer_transactions DROP CONSTRAINT IF EXISTS customer_transactions_type_check");
