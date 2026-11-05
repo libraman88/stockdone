@@ -44,6 +44,10 @@ function migrateProductSkuIndex() {
     return db.prepare("PRAGMA index_info(" + JSON.stringify(index.name) + ")").all().some((column) => column.name === "sku");
   });
   if (skuColumn && (skuColumn.notnull || uniqueSku)) {
+    db.pragma("wal_checkpoint(FULL)");
+    const backupDir = path.join(app.getPath("userData"), "backups");
+    fs.mkdirSync(backupDir, { recursive: true });
+    fs.copyFileSync(db.name, path.join(backupDir, `stockdone-before-sku-migration-${Date.now()}.sqlite`));
     db.pragma("foreign_keys = OFF");
     try {
       db.transaction(() => {
