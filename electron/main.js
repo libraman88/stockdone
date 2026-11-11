@@ -180,9 +180,16 @@ app.whenReady().then(() => {
         });
       });
 
-      if (isLabel) {
-        // Keep the label preview/details window visible and always open the native
-        // Windows printer dialog so the user can verify/select the Zebra printer.
+      if (isLabel && deviceName) {
+        // Send directly to the selected Zebra/label printer; the prior label path
+        // ignored deviceName and always opened the generic Windows dialog.
+        try {
+          await runPrint({ ...options, silent: true, deviceName });
+        } catch (error) {
+          printWindow.show();
+          await runPrint({ ...options, silent: false });
+        }
+      } else if (isLabel) {
         printWindow.show();
         await runPrint({ ...options, silent: false });
       } else if (deviceName) {
