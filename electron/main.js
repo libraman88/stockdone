@@ -114,6 +114,52 @@ app.whenReady().then(() => {
       await printWindow.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(String(html)));
       await printWindow.webContents.executeJavaScript("document.fonts ? document.fonts.ready.then(() => true) : true");
       await printWindow.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+      // Zebra's legacy Windows drivers can accept Chromium's print job but drop
+      // inline SVG graphics. Rasterize QR/barcode SVGs to PNG before printing.
+      await printWindow.webContents.executeJavaScript(`
+        (async () => {
+          const svgs = Array.from(document.querySelectorAll("svg"));
+          await Promise.all(svgs.map(async (svg) => {
+            try {
+              const bounds = svg.getBoundingClientRect();
+              const width = Math.max(1, Math.ceil(bounds.width * 4));
+              const height = Math.max(1, Math.ceil(bounds.height * 4));
+              const source = new XMLSerializer().serializeToString(svg);
+              const image = new Image();
+              image.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(source);
+              await new Promise((resolve, reject) => {
+                image.onload = resolve;
+                image.onerror = reject;
+              });
+              const canvas = document.createElement("canvas");
+              canvas.width = width;
+              canvas.height = height;
+              const context = canvas.getContext("2d");
+              if (!context) return;
+              context.fillStyle = "#fff";
+              context.fillRect(0, 0, width, height);
+              context.drawImage(image, 0, 0, width, height);
+              const raster = document.createElement("img");
+              raster.src = canvas.toDataURL("image/png");
+              raster.width = Math.max(1, Math.ceil(bounds.width));
+              raster.height = Math.max(1, Math.ceil(bounds.height));
+              raster.style.cssText = svg.style.cssText;
+              raster.className = svg.getAttribute("class") || "";
+              raster.alt = "Barcode or QR code";
+              svg.replaceWith(raster);
+            } catch (error) {
+              console.warn("Could not rasterize label SVG:", error);
+            }
+          }));
+          await Promise.all(Array.from(document.images).map(img =>
+            img.complete ? Promise.resolve() : new Promise(resolve => {
+              img.onload = resolve;
+              img.onerror = resolve;
+            })
+          ));
+          return true;
+        })()
+      `);
       const widthMm = Math.max(10, Math.min(300, Number(labelSizeMm?.width) || 50.8));
       const heightMm = Math.max(10, Math.min(300, Number(labelSizeMm?.height) || 25.4));
       const metrics = await printWindow.webContents.executeJavaScript("({height:Math.ceil(Math.max(document.body.scrollHeight,document.documentElement.scrollHeight,document.body.getBoundingClientRect().height)),width:Math.ceil(Math.max(document.body.scrollWidth,document.documentElement.scrollWidth,document.documentElement.getBoundingClientRect().width))})");
