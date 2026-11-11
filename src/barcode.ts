@@ -8,7 +8,7 @@ export function barcodeSvg(barcode: string) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   // A slightly narrower module width leaves safe space on both sides of
   // long CODE128 values on 2 x 1 inch Zebra labels.
-  JsBarcode(svg, barcode, { format: "CODE128", displayValue: true, fontSize: 7, height: 27, width: 1.6, margin: 0 });
+  JsBarcode(svg, barcode, { format: "CODE128", displayValue: true, fontSize: 8, height: 32, width: 1.4, margin: 10, textMargin: 2, lineColor: "#000000", background: "#ffffff" });
   return new XMLSerializer().serializeToString(svg);
 }
 
@@ -31,7 +31,7 @@ export function barcodeBatchHtml(name: string, sku: string, barcode: string, pri
   const labels = Array.from({ length: qty }, () =>
     `<div class="label"><div class="name">${safeName}</div><div>SKU: ${safeSku}</div><div class="barcode">${svg}</div><div class="price">Rs. ${safePrice}</div></div>`
   ).join("");
-  return `<!doctype html><html><head><meta charset="utf-8"><title>StockDone Barcode Labels</title><style>@page{size:${labelWidthMm}mm ${labelHeightMm}mm;margin:0}*{box-sizing:border-box}html,body{width:${labelWidthMm}mm;margin:0;padding:0;font-family:Arial}.sheet{display:grid;grid-template-columns:1fr;gap:0;width:${labelWidthMm}mm}.label{width:${labelWidthMm}mm;height:${labelHeightMm}mm;overflow:hidden;text-align:center;padding:0.7mm 2.2mm;break-after:page;page-break-after:always;border:0}.label:last-child{break-after:auto;page-break-after:auto}.name{font-weight:700;font-size:8pt;line-height:1.05;max-height:3.2mm;overflow:hidden;overflow-wrap:anywhere}.barcode{width:100%;max-width:100%;margin:0.3mm auto 0;line-height:0;overflow:hidden}.barcode svg{display:block;max-width:100%;max-height:12mm;width:auto;height:auto;margin:0 auto}.label>div:nth-child(2){font-size:6pt;line-height:1.05}.price{font-size:8pt;line-height:1.05;font-weight:700;margin-top:0.2mm}@media print{.label{break-inside:avoid}}</style></head><body><div class="sheet">${labels}</div><script>window.onload=()=>window.print()</script></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>StockDone Barcode Labels</title><style>@page{size:${labelWidthMm}mm ${labelHeightMm}mm;margin:0}*{box-sizing:border-box}html,body{width:${labelWidthMm}mm;margin:0;padding:0;font-family:Arial}.sheet{display:grid;grid-template-columns:1fr;gap:0;width:${labelWidthMm}mm}.label{width:${labelWidthMm}mm;height:${labelHeightMm}mm;overflow:hidden;text-align:center;padding:0.7mm 2.2mm;break-after:page;page-break-after:always;border:0}.label:last-child{break-after:auto;page-break-after:auto}.name{font-weight:700;font-size:8pt;line-height:1.05;max-height:3.2mm;overflow:hidden;overflow-wrap:anywhere}.barcode{width:100%;max-width:100%;margin:0.3mm auto 0;line-height:0;overflow:visible}.barcode svg{display:block;max-width:100%;max-height:13mm;width:100%;height:auto;margin:0 auto;shape-rendering:crispEdges}.label>div:nth-child(2){font-size:6pt;line-height:1.05}.price{font-size:8pt;line-height:1.05;font-weight:700;margin-top:0.2mm}@media print{.label{break-inside:avoid}}</style></head><body><div class="sheet">${labels}</div><script>window.onload=()=>window.print()</script></body></html>`;
 }
 
 export function printBarcodeBatch(name: string, sku: string, barcode: string, price: number, options: BarcodePrintOptions = {}) {
