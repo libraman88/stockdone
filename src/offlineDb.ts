@@ -244,18 +244,18 @@ export async function queueOfflineSupplierPayment(payment:{id:string;supplierId:
   }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
 }
 
-export async function queueOfflineInventoryAdjustment(input:{id:string;variantId:string;quantityDelta:number;reason:string;note?:string}) {
+export async function queueOfflineInventoryAdjustment(input:{id:string;variantId:string;quantityDelta:number;reason:string;note?:string;date?:string}) {
   if(!(await offlineDb.available()))throw new Error("Offline database is unavailable.");
   const s=authStorage.getSession(); if(!s?.businessId||!s?.branchId)throw new Error("Offline inventory adjustment requires branch context.");
   if(!Number.isInteger(input.quantityDelta)||input.quantityDelta===0)throw new Error("Inventory adjustment must be a non-zero integer.");
-  const now=new Date().toISOString(); await offlineDb.exec("BEGIN");
+  const now=new Date().toISOString(),movementDate=input.date?`${input.date}T12:00:00.000Z`:now; await offlineDb.exec("BEGIN");
   try{
     const rows=await offlineDb.query<{qty:number}>("SELECT qty FROM products WHERE id=? AND COALESCE(active,1)=1",[input.variantId]);
     if(!rows[0])throw new Error("Product is not available offline.");
     const next=Number(rows[0].qty)+input.quantityDelta;
     if(next<0)throw new Error("Inventory cannot become negative.");
     await offlineDb.exec("UPDATE products SET qty=?,updated_at=? WHERE id=?",[next,now,input.variantId]);
-    await offlineDb.exec("INSERT INTO stock_movements(id,product_id,type,quantity,reason,reference_id,created_at) VALUES(?,?,?,?,?,?,?)",[input.id,input.variantId,"adjustment",input.quantityDelta,input.reason,input.id,now]);
+    await offlineDb.exec("INSERT INTO stock_movements(id,product_id,type,quantity,reason,reference_id,created_at) VALUES(?,?,?,?,?,?,?)",[input.id,input.variantId,"adjustment",input.quantityDelta,input.reason,input.id,movementDate]);
     await offlineDb.exec("INSERT INTO sync_queue(id,entity,entity_id,operation,payload,created_at,status) VALUES(?,?,?,?,?,?,?)",[crypto.randomUUID(),"inventory_adjustment",input.id,"create",JSON.stringify({...input,businessId:s.businessId,branchId:s.branchId}),now,"pending"]);
     await offlineDb.exec("COMMIT");
   }catch(e){await offlineDb.exec("ROLLBACK");throw e;}
@@ -377,7 +377,7 @@ export async function syncPendingInventoryAdjustments(){
   for(const row of rows)try{
     const p=JSON.parse(row.payload),s=authStorage.getSession();
     if(!s?.businessId||!s?.branchId||p.businessId!==s.businessId||p.branchId!==s.branchId)continue;
-    await apiRequest("/inventory/adjustments",{method:"POST",body:JSON.stringify({variantId:p.variantId,quantityDelta:p.quantityDelta,reason:p.reason,note:p.note,clientReference:p.id})});
+    await apiRequest("/inventory/adjustments",{method:"POST",body:JSON.stringify({variantId:p.variantId,quantityDelta:p.quantityDelta,reason:p.reason,note:p.note,date:p.date,clientReference:p.id})});
     await offlineDb.exec("UPDATE sync_queue SET status='synced',synced_at=?,last_error=NULL WHERE id=?",[new Date().toISOString(),row.id]);synced++;
   }catch(e){
     const message=e instanceof Error?e.message:"Inventory adjustment sync failed",status=e instanceof ApiError?e.status:0;
