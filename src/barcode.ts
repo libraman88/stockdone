@@ -26,8 +26,8 @@ export function barcodeBatchHtml(name: string, sku: string, barcode: string, pri
   const safeSku = escapeHtml(sku);
   const safePrice = Number(price || 0).toFixed(2);
   const svg = barcodeSvg(barcode);
-  const labelWidthMm = Math.max(10, Math.min(300, Number(options.labelWidthMm) || 50.8));
-  const labelHeightMm = Math.max(10, Math.min(300, Number(options.labelHeightMm) || 25.4));
+  const labelWidthMm = Math.max(10, Math.min(300, Number(options.labelWidthMm) || 38));
+  const labelHeightMm = Math.max(10, Math.min(300, Number(options.labelHeightMm) || 28));
   const nameFontPt = Math.max(3, Math.min(7, (labelWidthMm * 2.83 * 1.9) / (Math.max(1, String(name ?? "").length) * 0.58)));
   const labels = Array.from({ length: qty }, () =>
     `<div class="label"><div class="name" style="--name-font-size:${nameFontPt}pt">${safeName}</div><div class="sku">SKU: ${safeSku}</div><div class="barcode">${svg}</div><div class="price">Rs. ${safePrice}</div></div>`
