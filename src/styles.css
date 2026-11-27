@@ -219,3 +219,10 @@ main input[type="range"] {
 .modal-backdrop > .modal .stock-item-details {
   margin-top: 14px;
 }
+
+
+/* Clear close control for Inventory history and stock adjustment dialogs. */
+.modal-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+.modal-heading h2{margin:0!important}
+.modal-heading .modal-close{flex:0 0 auto;width:34px;height:34px;padding:0;margin:0;border-radius:6px;background:#eef7ff!important;border:1px solid #bcd9ed!important;color:#14557f!important;font-size:23px;line-height:1;box-shadow:none}
+.modal-heading .modal-close:hover{background:#dff0ff!important;border-color:#8fc5eb!important;color:#0b5f99!important}
