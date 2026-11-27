@@ -1,6 +1,6 @@
 {
   "name": "stockdone",
-  "version": "0.2.192",
+  "version": "0.2.193",
   "private": true,
   "description": "StockDone - Garments POS & Inventory Management",
   "main": "electron/main.js",
